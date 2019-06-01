@@ -28,7 +28,6 @@ class Game(object):
     def __del__(self):
         print("Shutting down server...")
         erase_rounds()
-        sys.exit(1)
 
     def __init__(self, port, player_limit, max_rounds):
         self.picked_word = False
@@ -438,19 +437,23 @@ def erase_rounds():
             os.remove(round_pic)
             print("\t\t[-] Erased photo {} from {}".format(round_pic, os.getcwd()))
     print("\t[ERASE] Done cleaning up round canvases.")
-        
+
+class ServiceExit(Exception):
+    pass
+
 def handler(signum, frame):
     """
     Handling SIGINT(CTRL + C) incase admin wants to shutdown server.
     """
-    print("Shutting down server...")
-    erase_rounds()
-    sys.exit(1)
+    raise ServiceExit("ServiceExit")
         
 def main():
     print("Starting program...")
     signal.signal(signal.SIGINT, handler)
-    game = Game(8080, 5, 10)
-    
+    try:
+        game = Game(8080, 5, 10)
+    except ServiceExit:
+        print("Exiting...")
+        sys.exit(0)
 if __name__ == "__main__":
     main()
