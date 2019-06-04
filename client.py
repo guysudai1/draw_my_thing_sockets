@@ -1,6 +1,6 @@
 #!/usr/bin/python
 import socket
-
+from select import select
 
 def connect(addr, username):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -13,7 +13,9 @@ def main():
     PORT = 8080
     username = 'shimi'
     sock = connect((IP, PORT), username)
-
+    sock.send("chat start\n")
+    print(sock.recv(1024))
+    sock.close()
 
 if __name__ == '__main__':
     main()
