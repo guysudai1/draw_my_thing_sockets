@@ -189,7 +189,7 @@ class Game(object):
         connections = [player.conn for player in self.players]
         rd, _, _ = select(connections, [], [])
         for sock in rd:
-            dt = sock.recv(512, socket.MSG_PEEK)
+            dt = sock.recv(152, socket.MSG_PEEK)
             # Check if player is disconnected.
             if len(dt) == 0:
                 self.drawers.remove(sock)
@@ -200,6 +200,7 @@ class Game(object):
         """
         Picks a drawer for the current round.
         """
+        self.filter_drawers(self.drawers)
         drawer = choice(self.drawers) # Chooses random drawer out of the drawers
         self.drawers.remove(drawer)
         return drawer
@@ -259,7 +260,7 @@ class Game(object):
         self.drawer = self.pick_drawer()
         
         # Broadcast round beginning
-        self.broadcast("chat Round_{}_is_beginning_and_{}({})_is_the_drawer".format(self.round, self.drawer.name, self.drawer.ip))
+        self.broadcast("chat Round_{}_is_beginning_and_{}({})_is_the_drawer\n\r".format(self.round, self.drawer.name, self.drawer.ip))
         self.pick_word()
         
         # Start timer, allow drawing player to send images to server
@@ -267,7 +268,7 @@ class Game(object):
         img.save("round{}.png".format(str(self.round)), "PNG")
 
         start_time = time.time() # Round starting time
-        self.broadcast("chat Round_{}_is_starting!_You_have_60_seconds_to_guess_the_word!".format(self.round))
+        self.broadcast("chat Round_{}_is_starting!_You_have_60_seconds_to_guess_the_word!\n\r".format(self.round))
         self.started_guessing = True
 
         # Looping until 1. Word gets guessed || 2. 60 Seconds have passed.
@@ -280,7 +281,7 @@ class Game(object):
 
             end_time = time.time()
             if (end_time - start_time > 60):
-                self.broadcast("chat Round_ended!_No_one_guessed_the_correct_word")
+                self.broadcast("chat Round_ended!_No_one_guessed_the_correct_word\n\r")
                 break
 
     def pick_word(self):
@@ -288,8 +289,8 @@ class Game(object):
         Lets the artist choose a word out of three words
         """
         # Let the drawer know he has 30 seconds and send him the list of words.
-        self.drawer.conn.send("chat You_have_30_seconds_to_pick_a_word")
-        self.drawer.conn.send("pick " + '_'.join(self.round_words))   
+        self.drawer.conn.send("chat You_have_30_seconds_to_pick_a_word\n\r")
+        self.drawer.conn.send("pick " + '_'.join(self.round_words) + "\n\r")   
         cur_time = time.time()
         
         # Loop until 1. The drawer picks a word || 2. 30 Seconds have been passed.
@@ -303,7 +304,7 @@ class Game(object):
             end_time = time.time()    
             if (end_time - cur_time > 30):
                 self.round_words = choice(self.round_words)
-                self.broadcast("chat The_drawer_hasn\'t_picked_a_word,_so_{}_has_been_picked_automatically".format(self.round_words))
+                self.broadcast("chat The_drawer_hasn\'t_picked_a_word,_so_{}_has_been_picked_automatically\n\r".format(self.round_words))
                 break
 
     def reset_board(self):
@@ -330,10 +331,10 @@ class Game(object):
         winner_score = self.players[0].score
         print("Players : \{")
         print("\t{}({}) : {},".format(winner_name, winner_IP, winner_score))
-        self.broadcast("chat {}({})_has_won_the_game_with_{}_points".format(winner_name, winner_IP, winner_score))
         for player in self.players[1:]:
-            print("\t{}({}) : {},".format(winner_name, winner_IP, winner_score))
+            print("\t{}({}) : {},".format(player.name, player.ip, player.score))
         print("\}")
+        self.broadcast("chat {}({})_has_won_the_game_with_{}_points\n\r".format(winner_name, winner_IP, winner_score))
         
     def sort_players(self):
         """
@@ -372,13 +373,13 @@ class Game(object):
         file_size = int((os.path.getsize(file_path) + message_size - 1) / message_size)
         file_format = os.path.splitext(file_path)[1]
 
-        #                               BLOCK COUNT    FILE FORMAT      BLOCK SIZE
-        file_prop = "{} {} {}".format(str(file_size), file_format, str(message_size))
+        #                                         BLOCK COUNT    FILE FORMAT      BLOCK SIZE
+        file_prop = "change_canvas {} {} {}\n\r".format(str(file_size), file_format, str(message_size))
         block_count, file_format, block_size = str(file_size), file_format, str(message_size)
         
         client.setblocking(1)
         client.send(str(file_prop))
-        data = client.recv(1024)
+        data = client.recv(152)
         if (data and data.startswith("RECV")):
             print("[+] Sending " + str(file_size) + " parts...")
             file_content = ""
@@ -428,20 +429,61 @@ class Game(object):
             if conn is not fromSocket:
                 conn.send(msg)
 
-    def is_valid(self, input):
+    def is_valid(self, inp):
         """
+        @inp = input to be validated
+
+        True: inp is in the form "{command} something"
+        False: otherwise
         Checks if given input is valid or not
         """
         valid_commands = ['chat', 'change_canvas', 'username'] # Pick is sent from the server
-        first_word = input.split(' ')[0]
-        return first_word in valid_commands
+        first_word = inp.split(' ')[0]
+        return first_word in valid_commands and len(inp.split(' ') == 2)
+
+    def __accept_input__(self, sock):
+        """
+        @sock = socket to receive data from
+
+        This function accepts data smaller than 150 characters, and kicks the socket otherwise.
+        This function reads data until "\n\r" and returns the data or None incase invalid data.
+        """
+        end = "\n\r"
+        hit = 0
+        data = ""
+        peek_data = sock.recv(152, socket.MSG_PEEK)
+        if end not in peek_data:
+            self.__kick_player__(sock, "sending more than 150 charactes")
+            return None
+
+        while (hit < len(end)):
+            char = sock.recv(1)
+            if (char != end[hit]):
+                hit = 0
+            if (char == end[hit]): 
+                hit += 1
+            data += char
+        return data
 
     def accept_input(self, serv):
         """
+        @serv = socket to accept input from
+
         Handles the input gives by the players
         """
-        data = serv.recv(1024) # Looks like this: {command} sentence : Example chat start
+        # Receive data
+        data = serv.recv(1, socket.MSG_PEEK) # Looks like this: {command} sentence : Example chat start
+        if not data:
+            """
+            Handling player disconnections
+            """
+            print("\t[-] Player {}({}) has disconnected...".format(player_name, player_IP))
+            self.__remove_player__(serv)
+            serv.close()
         
+        data = self.__accept_input__(serv) 
+        if data is None: return
+        data = data.strip("\n\r")
         # Player data 
         player = self.__get_player__(serv)
         player_IP = player.ip
@@ -462,7 +504,7 @@ class Game(object):
                     for player in self.players:
                         if (player.name == message):
                             return
-                    print("Set username for player {}".format(player_IP))
+                    print("Set username for player {} : {}".format(player_IP, message))
                     player.name = message
                         
             elif command == "chat":
@@ -501,10 +543,12 @@ class Game(object):
             elif not self.receiving_image and command == "canvas_change":
                 if player.conn == self.drawer.conn:
                     """
+                    @message = number of times to accept
+
                     Sending canvas change to all players(except drawers since he already has the canvas)
                     """
                     # Receive image + how many chunks of the image are being sent.
-                    self.receiving_times = message
+                    self.receiving_times = int(message)
                     self.receive_image()
                     
                     # Sending canvas change to all players.
@@ -523,14 +567,12 @@ class Game(object):
                     self.canvas += data
                     self.receiving_image = self.receiving_times != 0
 
-        else:
-            """
-            Handling player disconnections
-            """
-            print("\t\t[-] Player {}({}) has disconnected...".format(player_name, player_IP))
-            self.__remove_player__(serv)
-            serv.close()
-            
+    def __kick_player__(self, conn, reason):
+        player = self.__get_player__(conn)
+        print("[KICK] kicking player {}({}) for {}".format(player.name, player.ip, reason))
+        self.__remove_player__(conn)
+        conn.close()
+
     def __remove_player__(self, conn):
         for i, player in enumerate(self.players):
             if (player.conn == conn):
