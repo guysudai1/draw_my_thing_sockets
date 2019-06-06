@@ -8,7 +8,7 @@ TODO:
 
 """
 from threading import Timer
-import socket, sys, signal, os, time, os.path
+import socket, sys, signal, os, time, os.path, re
 from PIL import Image
 from random import choice
 from select import select
@@ -117,7 +117,7 @@ class Game(object):
 
     def __init__(self, port, player_limit, max_rounds):
         self.picked_word = False
-        self.receiving_image = False
+        #self.receiving_image = False
         self.drawer = None
         self.round_words = []
         self.port = port
@@ -189,9 +189,9 @@ class Game(object):
         connections = [player.conn for player in self.players]
         rd, _, _ = select(connections, [], [])
         for sock in rd:
-            dt = sock.recv(152, socket.MSG_PEEK)
+            data = sock.recv(152, socket.MSG_PEEK)
             # Check if player is disconnected.
-            if len(dt) == 0:
+            if not data:
                 self.drawers.remove(sock)
                 self.players.remove(sock)
                 
@@ -235,15 +235,13 @@ class Game(object):
         elif (ability_name == "blind_person"):
             # Make prompt pop up and get player's name
             pass
-
-
     
-        return "OK", True
-    
- 
+        return "OK", True 
 
     def execute_round(self, round):
         """
+        @round = round number
+
         Executes a new round.
         """
         self.round = round
@@ -264,8 +262,8 @@ class Game(object):
         self.pick_word()
         
         # Start timer, allow drawing player to send images to server
-        img = Image.new('RGB', (400, 400), (255, 255, 255))
-        img.save("round{}.png".format(str(self.round)), "PNG")
+        self.img = Image.new('RGB', (400, 400), "white")
+        #img.save("round{}.png".format(str(self.round)), "PNG")
 
         start_time = time.time() # Round starting time
         self.broadcast("chat Round_{}_is_starting!_You_have_60_seconds_to_guess_the_word!\n\r".format(self.round))
@@ -312,7 +310,7 @@ class Game(object):
         Resets each client's board and sends a white board.
         """
         for client in self.players:
-            self.send_image(client.conn, "canvas.png")
+            self.send_image(client.conn)
             
     def game_loop(self):
         """
@@ -335,17 +333,22 @@ class Game(object):
             print("\t{}({}) : {},".format(player.name, player.ip, player.score))
         print("\}")
         self.broadcast("chat {}({})_has_won_the_game_with_{}_points\n\r".format(winner_name, winner_IP, winner_score))
-        
+    
+    def send_image(self, conn):
+        # TODO: ADD WAY TO SEND IMAGES
+        pass
+
     def sort_players(self):
         """
         Sorts the `self.players` list by max score
         """
         self.players = sorted(self.players, key=lambda x: x.score)
-        
+    
+    """
     def receive_image(self):
-        """
+        
         Receiving the canvas from the drawing client.
-        """
+        
         self.canvas = ""
         self.receiving_image = True
         
@@ -356,18 +359,18 @@ class Game(object):
             for sock in rd:
                 self.accept_input(sock)
         print("[IMAGE] Received new canvas by DRAWER({})".format(self.drawer.ip))
-		
+    	
     def send_image(self, client, image_name):
-        """
+        
         Sends an image(canvas) through a socket
          SERVER............................CLIENT
                  SEND IMAGE CONFIRMATION
             ---------------------------------> 
                  READY TO RECEIVE IMAGE 
             <--------------------------------- 
-                      TRANSFER IMAGE
+                     TRANSFER IMAGE
             ---------------------------------> 
-        """ 
+        
         message_size = 1024
         file_path = os.getcwd() + "/" + image_name
         file_size = int((os.path.getsize(file_path) + message_size - 1) / message_size)
@@ -379,7 +382,7 @@ class Game(object):
         
         client.setblocking(1)
         client.send(str(file_prop))
-        data = client.recv(152)
+        data = client.recv(message)
         if (data and data.startswith("RECV")):
             print("[+] Sending " + str(file_size) + " parts...")
             file_content = ""
@@ -396,15 +399,17 @@ class Game(object):
                 file_content = file_content[i * message_size:]
             if file_content:
                 client.send(file_content)
-            
+    """     
 
     def accept_connection(self, serv):
         """
+        @serv = socket of server
+
         Handles new connection attempts.
         """
         conn, addr = serv.accept()
         print("[-] Player({}) is attempting to connect...".format(str(addr[0])))
-        if (not self.__in_players__(None , addr)):
+        if True: #(not self.__in_players__(None , addr)):
             print("\t[+] Player({}) is now connected.".format(str(addr[0])))
             conn.setblocking(0) # In order for the .recv() to not block
             
@@ -422,6 +427,9 @@ class Game(object):
 
     def broadcast(self, msg, fromSocket=None):
         """
+        @msg        = the message to broadcast
+        @fromSocket = the socket not to send the message to
+
         Broadcasts a message to every socket except fromSocket
         """
         for player in self.players:
@@ -439,11 +447,12 @@ class Game(object):
         """
         valid_commands = ['chat', 'change_canvas', 'username'] # Pick is sent from the server
         first_word = inp.split(' ')[0]
-        return first_word in valid_commands and len(inp.split(' ') == 2)
+        return first_word in valid_commands
 
-    def __accept_input__(self, sock):
+    def __accept_input__(self, sock, command):
         """
-        @sock = socket to receive data from
+        @sock    = socket to receive data from.
+        @command = which command the user uses.(should be valid, except when receiving image)
 
         This function accepts data smaller than 150 characters, and kicks the socket otherwise.
         This function reads data until "\n\r" and returns the data or None incase invalid data.
@@ -451,9 +460,21 @@ class Game(object):
         end = "\n\r"
         hit = 0
         data = ""
-        peek_data = sock.recv(152, socket.MSG_PEEK)
+        allowed = 152
+        command = command.lower()
+        if (command == "username"):
+            allowed = 20 + len("username")
+        elif (command == "chat"):
+            allowed = 150 + len("chat")
+        elif (command == "change_canvas"):
+            allowed = 1024 + len("change_canvas")
+        #elif self.receiving_message:
+        #    allowed = 1048
+        else:
+            allowed = 150
+        peek_data = sock.recv(allowed, socket.MSG_PEEK)
         if end not in peek_data:
-            self.__kick_player__(sock, "sending more than 150 charactes")
+            self.__kick_player__(sock, "sending more than character limit")
             return None
 
         while (hit < len(end)):
@@ -473,6 +494,10 @@ class Game(object):
         """
         # Receive data
         data = serv.recv(1, socket.MSG_PEEK) # Looks like this: {command} sentence : Example chat start
+        # Player data 
+        player = self.__get_player__(serv)
+        player_IP = player.ip
+        player_name = player.name  
         if not data:
             """
             Handling player disconnections
@@ -480,92 +505,131 @@ class Game(object):
             print("\t[-] Player {}({}) has disconnected...".format(player_name, player_IP))
             self.__remove_player__(serv)
             serv.close()
-        
-        data = self.__accept_input__(serv) 
+            return
+
+        command_temp = data.split(' ')[0] 
+        data = self.__accept_input__(serv, command_temp) 
         if data is None: return
         data = data.strip("\n\r")
-        # Player data 
-        player = self.__get_player__(serv)
-        player_IP = player.ip
-        player_name = player.name
+      
         
-        # Check if the data isn't empty (means the client disconnected)
-        if data:
-            split_data = data.split(' ') # Should be in the form of: [{command}, sentence]
-            if (len(split_data) < 2): return
-            command = split_data[0].lower()
-            message = split_data[1].lower()
-            print("[INPUT] Received input from {}({}) : {}".format(str(player_name), player_IP, data))
-            if (not self.is_valid(command)):
-                print("[INPUT] Received invalid input")
-                return 
-            if command == "username" and not self.start_game:
-                if player_name == None and command == "username":
-                    for player in self.players:
-                        if (player.name == message):
-                            return
-                    print("Set username for player {} : {}".format(player_IP, message))
-                    player.name = message
-                        
-            elif command == "chat":
-                if not self.start_game:
-                    # Loading screen runs until 1. Player limit is reached || 2. First player to join types start
-                    self.broadcast(data, serv)
-                    if player == self.players[0] and message == "start":
-                        self.start_game = True
-                   
-                elif not self.picked_word and player.conn == self.drawer.conn:
-                    """
-                    Word picking phase, the drawer picks a word
-                    """
-                    if message in self.round_words:
-                        # Word has been picked
-                        self.round_words = message
-                        self.picked_word = True
-                        self.broadcast("chat {}({})_has_picked_the_word:_{}".format(player_name, player_IP, message))
-                        print("[GAME] {}({}) has picked a word! {}".format(player_name, player_IP, message))
-                        
-                elif self.started_guessing and not player.conn == self.drawer.conn:
-                    """
-                    Getting a guess from one of the players.
-                    """
-                    if message == self.round_words:
-                        self.broadcast("chat {}({})_has_guessed_the_correct_word!".format(player_name, player_IP))
-                        self.broadcast("chat The_correct_word_was_{}".format(self.round_words))
-                        self.started_guessing = False
-                    else:
-                        self.broadcast(data, serv)
-                
+        # Check if the data isn't empty (means the client disconnected) 
+        split_data = data.split(' ') # Should be in the form of: [{command}, sentence]
+        if (len(split_data) < 2): return
+        command = split_data[0].lower()
+        message = split_data[1].lower()
+        print("[INPUT] Received input from {}({}) : {}".format(str(player_name), player_IP, data))
+        if (not self.is_valid(command)):
+            print("[INPUT] Received invalid input")
+            return 
+        if command == "username" and not self.start_game:
+            if player_name == None and command == "username":
+                regex = r"^[a-zA-Z0-9]{1,20}"
+                if (not re.match(regex, message)):
+                    serv.send("chat Your_name_needs_to_have_only_alphabetical_characters_from_0_to_9")
+                    return
+                for player in self.players:
+                    if (player.name == message):
+                        serv.send("chat Another_player_has_this_game._Please_choose_another_name.")
+                        return
+                print("Set username for player {} : {}".format(player_IP, message))
+                player.name = message
+                    
+        elif command == "chat":
+            regex = r"[a-zA-Z0-9]{1,152}"
+            if (not re.match(regex, message)):
+                serv.send("chat Your_message_needs_to_be_only_alphabetical_characters._Please_send_another_one.")
+                return
+            if not self.start_game:
+                # Loading screen runs until 1. Player limit is reached || 2. First player to join types start
+                self.broadcast(data, serv)
+                if player == self.players[0] and message == "start":
+                    self.start_game = True
+               
+            elif not self.picked_word and player.conn == self.drawer.conn:
+                """
+                Word picking phase, the drawer picks a word
+                """
+                if message in self.round_words:
+                    # Word has been picked
+                    self.round_words = message
+                    self.picked_word = True
+                    self.broadcast("chat {}({})_has_picked_the_word:_{}".format(player_name, player_IP, message))
+                    print("[GAME] {}({}) has picked a word! {}".format(player_name, player_IP, message))
+                    
+            elif self.started_guessing and not player.conn == self.drawer.conn:
+                """
+                Getting a guess from one of the players.
+                """
+                if message == self.round_words:
+                    self.broadcast("chat {}({})_has_guessed_the_correct_word!".format(player_name, player_IP))
+                    self.broadcast("chat The_correct_word_was_{}".format(self.round_words))
+                    self.started_guessing = False
                 else:
-                    # Broadcasting the chat messages if no other condition is hit.
-                    self.broadcast(data, serv)
-                    
-            elif not self.receiving_image and command == "canvas_change":
-                if player.conn == self.drawer.conn:
-                    """
-                    @message = number of times to accept
-
-                    Sending canvas change to all players(except drawers since he already has the canvas)
-                    """
-                    # Receive image + how many chunks of the image are being sent.
-                    self.receiving_times = int(message)
-                    self.receive_image()
-                    
-                    # Sending canvas change to all players.
-                    print("[+] Sending canvas change to players...")
-                    for player in self.players:
-                        if player.conn == self.drawer.conn: continue
-                        self.send_image(player.conn, "round{}".format(self.round))
-                    self.receiving_image = False
-                    print("\t[-] Finished sending canvas to players.")
+                    self.broadcast(data, serv)                    
+            
             else:
-                if self.receiving_image and player.conn == self.drawer.conn:
-                    """
-                    Receive another chunk of the canvas, and set the receive amount to 1 less.
-                    """
-                    self.receiving_times -= 1
-                    self.canvas += data
-                    self.receiving_image = self.receiving_times != 0
+                # Broadcasting the chat messages if no other condition is hit.
+                self.broadcast(data, serv)
+        elif command == "change_canvas" and self.drawer.conn == serv:
+            """
+            @message = list of coordinates
+
+            Getting a list of coordinates to change + color
+            """
+            # change_canvas 250,300,E555D 100,50,E5E5E
+            regex = r"^change_canvas (([0-9]{1,3},){2}[a-zA-Z0-9]{6} )+"
+            message = split_data[1:] # "250,300", "100,50", "70,90"
+            cords = []
+            colors = []
+            for cord in message:
+                if (not re.match(regex, cord + " ")):
+                    serv.send("chat Sent_invalid_coordinates")
+                    return
+                split_coordinate = cord.split(",") # [250, 300]
+                temp_cords = [int(x) for x in split_coordinate[:2]] # [250, 300]
+                for i in temp_cords:
+                    if i >= 400 or i <= 0:
+                        serv.send("chat Sent_invalid_coordinates")
+                        return
+                cords += [tuple(temp_cords)]
+                colors += split_coordinate[2]
+                
+            cords = [int(cord) for cord in cords]
+            RGBColors = []
+            for color in colors:
+                RGBColors.append((int(color[:2], 16), int(color[2:4], 16),int(color[4:], 16), 255))
+            for cord, color in zip(cords, RGBColors):
+                self.img.putpixel(cord, color)
+
+        """
+        elif not self.receiving_image and command == "canvas_change":
+            if player.conn == self.drawer.conn:
+                
+                @message = number of times to accept
+
+                Sending canvas change to all players(except drawers since he already has the canvas)
+                
+                # Receive image + how many chunks of the image are being sent.
+                self.receiving_times = int(message)
+                self.receive_image()
+                
+                # Sending canvas change to all players.
+                print("[+] Sending canvas change to players...")
+                for player in self.players:
+                    if player.conn == self.drawer.conn: continue
+                    self.send_image(player.conn, "round{}".format(self.round))
+                self.receiving_image = False
+                print("\t[-] Finished sending canvas to players.")
+        else:
+            if self.receiving_image and player.conn == self.drawer.conn:
+                
+                Receive another chunk of the canvas, and set the receive amount to 1 less.
+                
+                self.receiving_times -= 1
+                self.canvas += data
+                self.receiving_image = self.receiving_times != 0
+        """
 
     def __kick_player__(self, conn, reason):
         player = self.__get_player__(conn)
