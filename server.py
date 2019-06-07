@@ -8,7 +8,7 @@ TODO:
 
 """
 from threading import Timer
-import socket, sys, signal, os, time, os.path, re
+import socket, sys, signal, time, re
 from PIL import Image
 from random import choice
 from select import select
@@ -111,20 +111,27 @@ class Game(object):
     def __repr__(self):
         return "Game : {\nPlayers: %s\nport: %s\n\n}" % (self.players, self.port) 
     
+    def handler(self, signum, frame):
+        self.server.close()
+        raise ServiceExit("ServiceExit")
+
     def __del__(self):
         print("Shutting down server...")
-        erase_rounds()
+        #erase_rounds()
 
     def __init__(self, port, player_limit, max_rounds):
+        signal.signal(signal.SIGINT, self.handler)
+        
         self.picked_word = False
         #self.receiving_image = False
         self.drawer = None
-        self.round_words = []
+        self.round_word = []
         self.port = port
         self.drawers = []
         self.players = []
+        self.guessed = []
 
-        self.server = socket.socket()
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.player_limit = player_limit
         self.max_rounds = max_rounds
         print("Game is running on ({}:{})".format("127.0.0.1", self.port))
@@ -146,6 +153,7 @@ class Game(object):
         """
         try:
             # Create server and bind it to port.
+            self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.server.bind(('', self.port))
         except:
             raise Exception("Could not start server...")
@@ -155,7 +163,6 @@ class Game(object):
         self.servers = [self.server]
         self.start_game = False
         
-        print(self.players)
         # Loop until either game starts or player limit is reached
         while len(self.players) < self.player_limit and not self.start_game: 
             player_connections = [player.conn for player in self.players]
@@ -184,26 +191,30 @@ class Game(object):
         """
         Makes sure all the drawers are in the game and not disconnected.
         """
-        if len(self.players) <= 1 : handler(1,1)
+        
+        if len(self.players) <= 1: self.handler(1,1)
         
         connections = [player.conn for player in self.players]
-        rd, _, _ = select(connections, [], [])
+        rd, _, _ = select(connections, [], [], 0)
         for sock in rd:
             data = sock.recv(152, socket.MSG_PEEK)
             # Check if player is disconnected.
             if not data:
-                self.drawers.remove(sock)
-                self.players.remove(sock)
+                if (sock in self.drawers):
+                    self.drawers.remove(sock)
+                if (sock in self.players):
+                    self.players.remove(sock)
                 
 
     def pick_drawer(self):
         """
         Picks a drawer for the current round.
         """
-        self.filter_drawers(self.drawers)
+        self.filter_drawers()
         drawer = choice(self.drawers) # Chooses random drawer out of the drawers
         self.drawers.remove(drawer)
-        return drawer
+
+        return self.__get_player__(drawer)
 
     def __cast__(self, player, ability_name):
         """
@@ -221,7 +232,7 @@ class Game(object):
             return "This ability is on cooldown", False
         
         print("[CAST] {} has been casted by {}".format(ability_name, player.name))
-        self.broadcast("{} ability has been casted by {}")
+        self.broadcast("chat", "{} ability has been casted by {}".format(ability_name, player.name))
         ability_name = ability_name.lower()
         if (ability_name == "blind_team"):
             for cur_player in self.players:
@@ -238,37 +249,41 @@ class Game(object):
     
         return "OK", True 
 
-    def execute_round(self, round):
+    def execute_round(self, rnd):
         """
-        @round = round number
+        @rnd = round number
 
         Executes a new round.
         """
-        self.round = round
+        self.round = rnd
         self.picked_word = False
         self.started_guessing = False
-        self.round_words = next(self.words)
+        self.round_word = next(self.words)
         self.reset_board()
         
-        # Get all player connections 
+        print("[WORDS] The picked words are: {}".format(self.round_word))
+        # Get all player connections )
         self.filter_drawers()
         connections = [player.conn for player in self.players]
         if (len(self.drawers) == 0):
             self.drawers = connections
         self.drawer = self.pick_drawer()
-        
+        self.guessed = []
+
+        print("Broadcasting round beginning")
         # Broadcast round beginning
-        self.broadcast("chat Round_{}_is_beginning_and_{}({})_is_the_drawer\n\r".format(self.round, self.drawer.name, self.drawer.ip))
+        self.broadcast("chat", "Round {} is beginning and {}({}) is the drawer.".format(self.round, self.drawer.name, self.drawer.ip))
         self.pick_word()
-        
+        print("[GAME] {}({}) has picked a word! {}".format(player.name, player.ip, self.round_word)) 
+        print("[WORD] The picked word is {}".format(self.round_word))
         # Start timer, allow drawing player to send images to server
         self.img = Image.new('RGB', (400, 400), "white")
         #img.save("round{}.png".format(str(self.round)), "PNG")
 
         start_time = time.time() # Round starting time
-        self.broadcast("chat Round_{}_is_starting!_You_have_60_seconds_to_guess_the_word!\n\r".format(self.round))
+        self.broadcast("chat", "Round {} is starting! You have 60 seconds to guess the word!".format(self.round))
         self.started_guessing = True
-
+        
         # Looping until 1. Word gets guessed || 2. 60 Seconds have passed.
         while True:
             self.filter_drawers()
@@ -278,9 +293,32 @@ class Game(object):
                 self.accept_input(player) 
 
             end_time = time.time()
-            if (end_time - start_time > 60):
-                self.broadcast("chat Round_ended!_No_one_guessed_the_correct_word\n\r")
+            if (len(self.guessed) == len(self.players) - 1):
+                self.broadcast("chat", "Everyone guessed the correct word!")
                 break
+            if (end_time - start_time > 60):
+                self.broadcast("chat", "Round ended! No one guessed the correct word.")
+                break
+        self.broadcast("chat", "The correct word was: {}".format(self.round_word))
+
+        # Score delivery
+        # 1st guesser = 4
+        # 2nd guesser = 3
+        # 3rd guesser = 2
+        # ...         = 1
+        for i, player in enumerate(self.guessed):
+            if i + 1 == 1:
+                self.send_message(player.conn, "chat", "You have received 4 points for being the first to guess the word!")
+                player.score += 4
+            elif i + 1 == 2:
+                self.send_message(player.conn, "chat", "You have received 4 points for being the first to guess the word!")
+                player.score += 3
+            elif i + 1 == 3:
+                self.send_message(player.conn, "chat", "You have received 4 points for being the first to guess the word!")
+                player.score += 2
+            else:
+                self.send_message(player.conn, "chat", "You have received 4 points for being the first to guess the word!")
+                player.score += 1
 
     def pick_word(self):
         """
@@ -288,23 +326,26 @@ class Game(object):
         """
         # Let the drawer know he has 30 seconds and send him the list of words.
         self.drawer.conn.send("chat You_have_30_seconds_to_pick_a_word\n\r")
-        self.drawer.conn.send("pick " + '_'.join(self.round_words) + "\n\r")   
+        self.drawer.conn.send("pick " + '_'.join(self.round_word) + "\n\r")   
         cur_time = time.time()
         
         # Loop until 1. The drawer picks a word || 2. 30 Seconds have been passed.
         while not self.picked_word:
             self.filter_drawers()
             connections = [player.conn for player in self.players]
-            rd, _, _ = select(connections, [], [])
+            rd, _, _ = select(connections, [], [], 0)
             for sock in rd:
                 self.accept_input(sock)
 
-            end_time = time.time()    
+            end_time = time.time() 
             if (end_time - cur_time > 30):
-                self.round_words = choice(self.round_words)
-                self.broadcast("chat The_drawer_hasn\'t_picked_a_word,_so_{}_has_been_picked_automatically\n\r".format(self.round_words))
+                self.round_word = choice(self.round_word)
+                self.broadcast("chat", "The drawer hasn\'t picked a word, so a word has been picked randomly.".format(self.round_word))
+                print("[GAME] {}({}) hasn\'t picked a word so the word {} has been chosen randomly.".format(player.name, player.ip, self.round_word))
                 break
-
+        else:
+            # In case the drawer picked a word
+            print("[GAME] {}({}) has picked a word! {}".format(player.name, player.ip, self.round_word))
     def reset_board(self):
         """
         Resets each client's board and sends a white board.
@@ -316,8 +357,8 @@ class Game(object):
         """
         Main game loop
         """
-        for round in range(1, self.max_rounds + 1):
-            self.execute_round(round)
+        for rnd in range(1, self.max_rounds + 1):
+             self.execute_round(rnd)
         
         # Get final results.
         self.sort_players()
@@ -332,7 +373,7 @@ class Game(object):
         for player in self.players[1:]:
             print("\t{}({}) : {},".format(player.name, player.ip, player.score))
         print("\}")
-        self.broadcast("chat {}({})_has_won_the_game_with_{}_points\n\r".format(winner_name, winner_IP, winner_score))
+        self.broadcast("chat", "{}({}) has won the game with {} points!".format(winner_name, winner_IP, winner_score))
     
     def send_image(self, conn):
         # TODO: ADD WAY TO SEND IMAGES
@@ -412,7 +453,7 @@ class Game(object):
         if True: #(not self.__in_players__(None , addr)):
             print("\t[+] Player({}) is now connected.".format(str(addr[0])))
             conn.setblocking(0) # In order for the .recv() to not block
-            
+                
             abilities = [] 
             abilities.append(Ability(2 * len(self.players), "blind_team", 10, 4)) # Cost, name, cooldown, effect time
             abilities.append(Ability(5, "unblind", 20, 0)) # Cost, name, cooldown
@@ -425,17 +466,18 @@ class Game(object):
             conn.send("Already connected from this IP...")
             conn.close()
 
-    def broadcast(self, msg, fromSocket=None):
+    def broadcast(self, command, msg, fromSocket=None):
         """
         @msg        = the message to broadcast
         @fromSocket = the socket not to send the message to
 
         Broadcasts a message to every socket except fromSocket
         """
+        msg = "_".join(msg.split(' '))
         for player in self.players:
             conn = player.conn
             if conn is not fromSocket:
-                conn.send(msg)
+                conn.send("{} {}\n\r".format(command, msg))
 
     def is_valid(self, inp):
         """
@@ -467,14 +509,14 @@ class Game(object):
         elif (command == "chat"):
             allowed = 150 + len("chat")
         elif (command == "change_canvas"):
-            allowed = 1024 + len("change_canvas")
+            allowed = 2048 + len("change_canvas ")
         #elif self.receiving_message:
         #    allowed = 1048
         else:
             allowed = 150
         peek_data = sock.recv(allowed, socket.MSG_PEEK)
         if end not in peek_data:
-            self.__kick_player__(sock, "sending more than character limit")
+            self.__kick_player__(sock, "sending more than character limit or not having \\n\\r at the end of the line.")
             return None
 
         while (hit < len(end)):
@@ -485,6 +527,9 @@ class Game(object):
                 hit += 1
             data += char
         return data
+    def send_message(self, recv, command, message):
+        message = "_".join(message.split(' '))
+        recv.send("{} {}\n\r".format(command, message))
 
     def accept_input(self, serv):
         """
@@ -493,7 +538,7 @@ class Game(object):
         Handles the input gives by the players
         """
         # Receive data
-        data = serv.recv(1, socket.MSG_PEEK) # Looks like this: {command} sentence : Example chat start
+        data = serv.recv(20, socket.MSG_PEEK) # Looks like this: {command} sentence : Example chat start
         # Player data 
         player = self.__get_player__(serv)
         player_IP = player.ip
@@ -526,11 +571,11 @@ class Game(object):
             if player_name == None and command == "username":
                 regex = r"^[a-zA-Z0-9]{1,20}"
                 if (not re.match(regex, message)):
-                    serv.send("chat Your_name_needs_to_have_only_alphabetical_characters_from_0_to_9")
+                    self.send_message(serv, "chat", "Your name needs to have only alphabetical characters from 0 to 9")
                     return
                 for player in self.players:
                     if (player.name == message):
-                        serv.send("chat Another_player_has_this_game._Please_choose_another_name.")
+                        self.send_message(serv, "chat", "Another player has this name. Please choose another name.")
                         return
                 print("Set username for player {} : {}".format(player_IP, message))
                 player.name = message
@@ -538,11 +583,13 @@ class Game(object):
         elif command == "chat":
             regex = r"[a-zA-Z0-9]{1,152}"
             if (not re.match(regex, message)):
-                serv.send("chat Your_message_needs_to_be_only_alphabetical_characters._Please_send_another_one.")
+                self.send_message(serv, "chat", "Your message needs to be only alphabetical characters. Please send another one.")
                 return
             if not self.start_game:
                 # Loading screen runs until 1. Player limit is reached || 2. First player to join types start
-                self.broadcast(data, serv)
+                command = split_data[0]
+                message = split_data[1]
+                self.broadcast(command, message, serv)
                 if player == self.players[0] and message == "start":
                     self.start_game = True
                
@@ -550,27 +597,34 @@ class Game(object):
                 """
                 Word picking phase, the drawer picks a word
                 """
-                if message in self.round_words:
+                if message in self.round_word:
                     # Word has been picked
-                    self.round_words = message
+                    self.round_word = message
                     self.picked_word = True
-                    self.broadcast("chat {}({})_has_picked_the_word:_{}".format(player_name, player_IP, message))
-                    print("[GAME] {}({}) has picked a word! {}".format(player_name, player_IP, message))
+                    #self.broadcast("chat {}({})_has_picked_the_word:_{}".format(player_name, player_IP, message))
+                   
                     
             elif self.started_guessing and not player.conn == self.drawer.conn:
                 """
                 Getting a guess from one of the players.
                 """
-                if message == self.round_words:
-                    self.broadcast("chat {}({})_has_guessed_the_correct_word!".format(player_name, player_IP))
-                    self.broadcast("chat The_correct_word_was_{}".format(self.round_words))
-                    self.started_guessing = False
+                if message == self.round_word:
+                    self.broadcast("chat", "{}({}) has guessed the correct word!".format(player_name, player_IP))
+                    self.guessed.append(player)
+                    #self.broadcast("chat", "The correct word was {}".format(self.round_word))
+                    #self.started_guessing = False
                 else:
-                    self.broadcast(data, serv)                    
-            
+                    command = split_data[0]
+                    message = split_data[1]
+                    self.broadcast(command, message, serv)                    
+            elif self.started_guessing and player.conn == self.drawer.conn:
+                self.send_message(player.conn, "chat", "You are the drawer, you cannot type in chat.")
             else:
+                command = split_data[0]
+                message = split_data[1]
                 # Broadcasting the chat messages if no other condition is hit.
-                self.broadcast(data, serv)
+                self.broadcast(command, message, serv)
+
         elif command == "change_canvas" and self.drawer.conn == serv:
             """
             @message = list of coordinates
@@ -578,30 +632,29 @@ class Game(object):
             Getting a list of coordinates to change + color
             """
             # change_canvas 250,300,E555D 100,50,E5E5E
-            regex = r"^change_canvas (([0-9]{1,3},){2}[a-zA-Z0-9]{6} )+"
+            regex = r"^(([0-9]{1,3},){2}[a-zA-Z0-9]{6})"
             message = split_data[1:] # "250,300", "100,50", "70,90"
             cords = []
             colors = []
             for cord in message:
-                if (not re.match(regex, cord + " ")):
-                    serv.send("chat Sent_invalid_coordinates")
+                if (not re.match(regex, cord)):
+                    self.send_message(serv, "chat", "Sent invalid coordinates.")
                     return
                 split_coordinate = cord.split(",") # [250, 300]
                 temp_cords = [int(x) for x in split_coordinate[:2]] # [250, 300]
                 for i in temp_cords:
                     if i >= 400 or i <= 0:
-                        serv.send("chat Sent_invalid_coordinates")
+                        self.send_message(serv, "chat", "Sent invalid coordinates.")
                         return
                 cords += [tuple(temp_cords)]
-                colors += split_coordinate[2]
+                colors.append(split_coordinate[2])
                 
-            cords = [int(cord) for cord in cords]
+            cords = [(int(cord[0]), int(cord[1])) for cord in cords]
             RGBColors = []
             for color in colors:
                 RGBColors.append((int(color[:2], 16), int(color[2:4], 16),int(color[4:], 16), 255))
             for cord, color in zip(cords, RGBColors):
                 self.img.putpixel(cord, color)
-
         """
         elif not self.receiving_image and command == "canvas_change":
             if player.conn == self.drawer.conn:
@@ -666,11 +719,11 @@ class Game(object):
                     return True
         return False
 
-        
+"""    
 def erase_rounds():
-    """
+    
     Erasing all round{}.png images saved.
-    """
+    
     global MAX_ROUNDS
     print("[ERASE] Cleaning up round canvases...")
     for i in range(1, MAX_ROUNDS + 1):
@@ -679,23 +732,24 @@ def erase_rounds():
             os.remove(round_pic)
             print("\t\t[-] Erased photo {} from {}".format(round_pic, os.getcwd()))
     print("\t[ERASE] Done cleaning up round canvases.")
-
+"""
 class ServiceExit(Exception):
     pass
-
+"""
 def handler(signum, frame):
-    """
+    
     Handling SIGINT(CTRL + C) incase admin wants to shutdown server.
-    """
+    
     raise ServiceExit("ServiceExit")
-        
+"""
+
 def main():
     print("Starting program...")
-    signal.signal(signal.SIGINT, handler)
+   # signal.signal(signal.SIGINT, handler)
     try:
         game = Game(8080, 5, 10)
     except ServiceExit:
         print("Exiting...")
-        sys.exit(0)
+
 if __name__ == "__main__":
     main()
