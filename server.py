@@ -90,13 +90,13 @@ class Player(object):
         
         @ability_name   = Ability name
         """
-        if ability_name == "blind_person":
+        if ability_name == "blindperson":
             place = 1 << 8
-        elif ability_name == "blind_team":
+        elif ability_name == "blindteam":
             place = 1 << 7
-        elif ability_name == "disable_typing": # TODO : REPLACE ABILITY
+        elif ability_name == "disabletyping": # TODO : REPLACE ABILITY
             place = 1 << 6
-        elif ability_name == "get_letter":
+        elif ability_name == "getletter":
             place = 1 << 5
         return place 
 
@@ -302,7 +302,15 @@ class Game(object):
 
     def cast(self, player, ability_name, info=""):
         # TODO : Add a function that casts the ability(__cast__ checks for requirements)
-        pass
+
+        message, success = self.__cast__(player, ability_name, info)
+        if (success == False):
+            self.send_message(player.conn, "chat", message)
+            print("[CAST] Failed cast by {} for {}".format(player.name, message))
+            return
+
+        print("[CAST] {} has been casted by {}".format(ability_name, player.name))
+        self.broadcast("chat", "{} ability has been casted by {}".format(ability_name, player.name))
 
 
     def __cast__(self, player, ability_name, info=""):
@@ -315,19 +323,37 @@ class Game(object):
 
         return: error_text, is_successful
         """
+
+        
+        ability_name = ability_name.lower()
+        casted_ability = None
         # Get ability in player's inventory
         for ability in player.abilities:
             if ability.name == ability_name:
                 casted_ability = ability
+                break
+        
+        if (casted_ability is None):
+            return "No such ability exists", False
         # Check if player has enough points to cast the spell
         if (player.score < casted_ability.cost):
             return "Not enough mana", False
         if (not casted_ability.cast()):
             return "This ability is on cooldown", False
         
-        print("[CAST] {} has been casted by {}".format(ability_name, player.name))
-        self.broadcast("chat", "{} ability has been casted by {}".format(ability_name, player.name))
-        ability_name = ability_name.lower()
+        # TODO : Add abilities which require username, check if username is valid
+        username_abilities = ["disabletyping", "blindperson"]
+        if ability_name in username_abilities:
+            self.filter_drawers()
+            for player in self.players:
+                if player.name == info:
+                    break
+            else:
+                return "No player with such nickname", False
+
+        return "OK", True
+        
+               ability_name = ability_name.lower()
         if (ability_name == "blind_team"):
             for cur_player in self.players:
                 if (cur_player != player):
@@ -605,7 +631,7 @@ class Game(object):
         False: otherwise
         Checks if given input is valid or not
         """
-        valid_commands = ['chat', 'change_canvas', 'username'] # Pick is sent from the server
+        valid_commands = ['chat', 'change_canvas', 'username', 'cast'] # Pick is sent from the server
         first_word = inp.split(' ')[0]
         return first_word in valid_commands
 
@@ -623,11 +649,13 @@ class Game(object):
         allowed = 152
         command = command.lower()
         if (command == "username"):
-            allowed = 20 + len("username")
+            allowed = 20 + len("username ")
         elif (command == "chat"):
-            allowed = 150 + len("chat")
+            allowed = 150 + len("chat ")
         elif (command == "change_canvas"):
             allowed = 2048 + len("change_canvas ")
+        elif (command == "cast"):
+            allowed = 60 + len("cast ")
         #elif self.receiving_message:
         #    allowed = 1048
         else:
@@ -687,7 +715,7 @@ class Game(object):
             return 
         if command == "username" and not self.start_game:
             if player_name is None and command == "username":
-                regex = r"^[a-zA-Z0-9]{1,20}"
+                regex = r"^[a-zA-Z0-9]{1,20}$"
                 if (not re.match(regex, message)):
                     self.send_message(serv, "chat", "Your name needs to have only alphabetical characters from 0 to 9")
                     return
@@ -700,7 +728,7 @@ class Game(object):
                     
         elif command == "chat":
             # TODO : Add to chat {player_name}: {player_message}
-            regex = r"[a-zA-Z0-9]{1,152}"
+            regex = r"^[a-zA-Z0-9 ]{1,152}$"
             if (not re.match(regex, message)):
                 self.send_message(serv, "chat", "Your message needs to be only alphabetical characters. Please send another one.")
                 return
@@ -751,7 +779,7 @@ class Game(object):
             Getting a list of coordinates to change + color
             """
             # change_canvas 250,300,E555D 100,50,E5E5E
-            regex = r"^(([0-9]{1,3},){2}[a-zA-Z0-9]{6})"
+            regex = r"^(([0-9]{1,3},){2}[a-zA-Z0-9]{6})$"
             message = split_data[1:] # "250,300", "100,50", "70,90"
             cords = []
             colors = []
@@ -774,6 +802,11 @@ class Game(object):
                 RGBColors.append((int(color[:2], 16), int(color[2:4], 16),int(color[4:], 16), 255))
             for cord, color in zip(cords, RGBColors):
                 self.img.putpixel(cord, color)
+
+        elif command == "cast" and self.drawer.conn != serv:
+            # TODO : Add spellcasting
+            pass
+        
         """
         elif not self.receiving_image and command == "canvas_change":
             if player.conn == self.drawer.conn:
