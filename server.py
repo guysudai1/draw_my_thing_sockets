@@ -5,7 +5,6 @@ This is a server for a draw my thing game made by Guy and Yoav.
 TODO: 
 1. Think of new abilities
 2. Try playing
-
 """
 from threading import Timer
 import socket, sys, signal, time, re
@@ -274,6 +273,7 @@ class Game(object):
         # Broadcast round beginning
         self.broadcast("chat", "Round {} is beginning and {}({}) is the drawer.".format(self.round, self.drawer.name, self.drawer.ip))
         self.pick_word()
+        self.send_message(self.drawer.conn, "chat", "Your word is {}.".format(self.round_word))
         print("[GAME] {}({}) has picked a word! {}".format(player.name, player.ip, self.round_word)) 
         print("[WORD] The picked word is {}".format(self.round_word))
         # Start timer, allow drawing player to send images to server
@@ -346,6 +346,7 @@ class Game(object):
         else:
             # In case the drawer picked a word
             print("[GAME] {}({}) has picked a word! {}".format(player.name, player.ip, self.round_word))
+    
     def reset_board(self):
         """
         Resets each client's board and sends a white board.
