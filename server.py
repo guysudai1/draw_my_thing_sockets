@@ -55,18 +55,18 @@ class Ability(object):
 class Player(object):
     """
     Represents a player.
-
+    @score      = A player's score                  (int type)
     @conn       = A player's socket connection      (socket type)
-    @init_mana  = Initial mana a player begins with (int type)
     @name       = A player's name                   (string type)
     @abilities  = A player's abilities              (list of abilities class type)
-    @ip         = A player's IP                     (string)
+    @ip         = A player's IP                     (string type)
+    @state      = A variable that represents        (int type)
+                  effects from casted spells
     """
-    def __init__(self, conn, init_mana, name, abilities, ip):
-        self.mana       = init_mana
+    def __init__(self, conn, name, abilities, ip):
         self.name       = name
-        self.abilities  = abilities
-        self.conn = conn 
+        self.abilities  = []
+        self.conn       = conn 
         self.score      = 0
         self.ip         = ip
         self.state      = 0 # State is represented by each bit of the number
@@ -74,10 +74,22 @@ class Player(object):
         # Blind      Blind   Disable    Give      
         # specific   Team    Typing     Letter
         # person             Specific
-    
 
+        # Add abilities to each player's kit
+        self.__create_abilities__()
     
+    def __create_abilities__(self):
+        # TODO : Add abilities to self.abilities
+        pass
+
+
     def __get_place__(self, ability_name):
+        """
+        This function receives ability name and returns the ability's place in the 
+        `self.state` variable.
+        
+        @ability_name   = Ability name
+        """
         if ability_name == "blind_person":
             place = 1 << 8
         elif ability_name == "blind_team":
@@ -88,7 +100,13 @@ class Player(object):
             place = 1 << 5
         return place 
 
+
     def remove_state(self, ability_name):
+        """
+        This function removes the ability effect from `self.state`
+
+        @ability_name = Ability name
+        """
         ability_name = ability_name.lower()
         place = self.__get_place__(ability_name)
         if (self.state & place != 0):
@@ -98,6 +116,11 @@ class Player(object):
     
 
     def add_state(self, ability_name):
+        """
+        This function adds an effect to a player.
+
+        @ability_name = Ability name
+        """
         ability_name = ability_name.lower()
         place = self.__get_place__(ability_name)
         if (self.state & place == 0):
@@ -277,9 +300,14 @@ class Game(object):
         return drawer
 
 
+    def cast(self, player, ability_name, info=""):
+        # TODO : Add a function that casts the ability(__cast__ checks for requirements)
+        pass
+
+
     def __cast__(self, player, ability_name, info=""):
         """
-        This casts an ability.
+        This function checks if a player can cast an ability.
 
         @player         = Player casting the ability. (Player type)
         @ability_name   = Ability's name.             (Ability type)
@@ -287,10 +315,12 @@ class Game(object):
 
         return: error_text, is_successful
         """
+        # Get ability in player's inventory
         for ability in player.abilities:
             if ability.name == ability_name:
                 casted_ability = ability
-        if (player.mana < casted_ability.cost):
+        # Check if player has enough points to cast the spell
+        if (player.score < casted_ability.cost):
             return "Not enough mana", False
         if (not casted_ability.cast()):
             return "This ability is on cooldown", False
@@ -669,6 +699,7 @@ class Game(object):
                 player.name = message
                     
         elif command == "chat":
+            # TODO : Add to chat {player_name}: {player_message}
             regex = r"[a-zA-Z0-9]{1,152}"
             if (not re.match(regex, message)):
                 self.send_message(serv, "chat", "Your message needs to be only alphabetical characters. Please send another one.")
