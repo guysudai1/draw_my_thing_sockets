@@ -7,11 +7,11 @@ TODO:
 2. Try playing
 """
 from threading import Timer
-import socket, sys, signal, time, re
+import socket, signal, time, re
 from PIL import Image
 from random import choice
 from select import select
-
+from sys import exit
 
 """
 class GameManager(object):
@@ -70,10 +70,10 @@ class Player(object):
         self.score      = 0
         self.ip         = ip
         self.state      = 0 # State is represented by each bit of the number
-        # 0         0               0               0              0           0           0           0
-        # Blind    Blind Team                       Give letter      
-        # specific                   
-        # person
+        # 0           0      0          0       0           0           0           0
+        # Blind      Blind   Disable    Give      
+        # specific   Team    Typing     Letter
+        # person             Specific
     
 
     
@@ -82,7 +82,7 @@ class Player(object):
             place = 1 << 8
         elif ability_name == "blind_team":
             place = 1 << 7
-        elif ability_name == "draw_screen": # TODO : REPLACE ABILITY
+        elif ability_name == "disable_typing": # TODO : REPLACE ABILITY
             place = 1 << 6
         elif ability_name == "get_letter":
             place = 1 << 5
@@ -119,68 +119,126 @@ class Game(object):
         #erase_rounds()
 
     def __init__(self, port, player_limit, max_rounds):
+        # Signal to handle CTRL + C, in case owner wants to stop server.
         signal.signal(signal.SIGINT, self.handler)
         
+        # Setting up initial variables
+        # holds whether word has been picked already by the drawer(bool type)
         self.picked_word = False
-        #self.receiving_image = False
+        # holds the drawer(Player type)
         self.drawer = None
-        self.round_word = []
+        # Holds the current drawer's word (array of strings, or string)
+        self.drawer_word = []
+        # Holds the server port (int type)
         self.port = port
+        # Holds a list of drawers(Player[] type)
         self.drawers = []
+        # Holds a list of all players(Player[] type)
         self.players = []
+        # Holds a list of all players who guessed the drawer_word(Player[] type)
         self.guessed = []
-
+        # Server that hosts the game.
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # Variable that holds the maximum amount of players able to play(int type)
         self.player_limit = player_limit
+        # Holds amount of rounds to play(int type)
         self.max_rounds = max_rounds
+        
+        # Initialize game
+        self.__initialize_server__()
         print("Game is running on ({}:{})".format("127.0.0.1", self.port))
         print("[+] Set player limit to {}".format(self.player_limit))
         print("[+] Set max rounds to {}".format(self.max_rounds))
+        
+        # Initialize lobby
         print("[+] Starting lobby\n [+] Waiting for players to connect...")
         self.do_lobby()
         print("[-] Lobby ended...\n[-] All players connected.")
+        
+        # Generate word list
         self.words = self.__get_random_words__()
         print("[+] Picked all random words.")
+
+        # Main game
         print("[GAME] Starting game...")
         self.game_loop()
+
+        # Game end
         self.server.close()
         print("[CLOSED] Game closed.")
-       
-    def do_lobby(self):
+    
+
+    def __initialize_server__(self):
         """
-        Lobby - Waits for players until first player is ready or until max player limit is reached.
+        This function attempts to bind the `self.server` variable to a port,
+        if it fails it raises an Exception.
         """
+        
         try:
-            # Create server and bind it to port.
+            # Prevents socket from going into TIME_WAIT at the end of execution.
             self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            # Binding server to 0.0.0.0 with port (self.port)
             self.server.bind(('', self.port))
         except:
             raise Exception("Could not start server...")
-        
-        # Bind server 
+        # Allowing up to 2 connections in a queue
         self.server.listen(2) 
-        self.servers = [self.server]
+
+    def do_lobby(self):
+        """
+        This function is essentially a lobby it waits for players until first player is ready or until max player limit is reached.
+
+        If max player limit is reached, it waits 5 seconds and then starts the game.
+        """
+        # Holds if the game started.
         self.start_game = False
-        
+        # Holds the time the lobby was full.
+        cur_time = None
+        # Wait amount after lobby is full
+        wait_amount = 5 # Seconds
+
         # Loop until either game starts or player limit is reached
-        while len(self.players) < self.player_limit and not self.start_game: 
+        while not self.start_game: 
+            # Get player connections
             player_connections = [player.conn for player in self.players]
-            temp_servers       = [self.server] + player_connections
-            read, _, _ = select(temp_servers, [] , [])
+            read, _, _ = select([self.server] + player_connections, [] , [], 0)
+
             for serv in read:
+                # Check if a player is connecting
                 if serv is self.server:
                     self.accept_connection(serv)
-                elif self.__in_players__(serv):
+                else:
                     self.accept_input(serv)
-        
+
+            # Check if lobby is full
+            if len(self.players) == self.player_limit:
+                if cur_time is None:
+                    cur_time = time.time()
+                    print("[LOBBY] The maximum amount of players have joined, starting game in 5 seconds...")
+                    self.broadcast("chat", "The lobby has been filled. Starting game in 5 seconds...")
+
+                end_time = time.time()
+                if (end_time - cur_time >= wait_amount): 
+                    self.start_game = True
+            elif (not cur_time is None):
+                # Check if lobby has been full and now is not full.
+                print("[LOBBY] Cancelled countdown.")
+                self.broadcast("chat", "The countdown has been cancelled")
+                cur_time = None
+
+        self.filter_drawers()
+
     def __get_random_words__(self):
         """
-        Picks 3 random words from a wordlist(word_list.txt)
+        Picks 3 random words from a wordlist (word_list.txt)
+        to get the words use next().
         """
+        
         with open("word_list.txt", "r") as f :
             text = f.read().splitlines()
-            for _ in range(self.max_rounds):
+            for _ in range(self.max_rounds * len(self.players)):
                 words = []
+                # Generate 3 words.
                 for _ in range(3):
                     words.append(choice(text))
                 yield words 
@@ -188,37 +246,44 @@ class Game(object):
 
     def filter_drawers(self):
         """
-        Makes sure all the drawers are in the game and not disconnected.
+        Makes sure all the drawers are in the game and not disconnected or without a name.
         """
         
+        # Make sure there is more than 1 player.
         if len(self.players) <= 1: self.handler(1,1)
         
+        # Get player connections.
         connections = [player.conn for player in self.players]
         rd, _, _ = select(connections, [], [], 0)
+        
         for sock in rd:
             data = sock.recv(152, socket.MSG_PEEK)
-            # Check if player is disconnected.
+            player = self.__get_player__(sock)
+            # Kick player that disconnected
             if not data:
-                if (sock in self.drawers):
-                    self.drawers.remove(sock)
-                if (sock in self.players):
-                    self.players.remove(sock)
-                
+                self.__kick_player__(sock, "disconnecting")
+            # Kick player that has no name
+            elif player.name is None:
+                self.__kick_player__(sock, "not having a name")
+
 
     def pick_drawer(self):
         """
-        Picks a drawer for the current round.
+        Picks a drawer for the current round from the `self.drawers` list.
         """
         self.filter_drawers()
         drawer = choice(self.drawers) # Chooses random drawer out of the drawers
         self.drawers.remove(drawer)
+        return drawer
 
-        return self.__get_player__(drawer)
 
-    def __cast__(self, player, ability_name):
+    def __cast__(self, player, ability_name, info=""):
         """
-        @player         = Player casting the ability
-        @ability_name   = Ability's name
+        This casts an ability.
+
+        @player         = Player casting the ability. (Player type)
+        @ability_name   = Ability's name.             (Ability type)
+        @info           = Optional, might include affected player's name. (string type)
 
         return: error_text, is_successful
         """
@@ -254,41 +319,44 @@ class Game(object):
 
         Executes a new round.
         """
+        
         self.round = rnd
         self.picked_word = False
         self.started_guessing = False
-        self.round_word = next(self.words)
+        self.drawer_word = next(self.words)
         self.reset_board()
         
-        print("[WORDS] The picked words are: {}".format(self.round_word))
+
         # Get all player connections )
         self.filter_drawers()
-        connections = [player.conn for player in self.players]
-        if (len(self.drawers) == 0):
-            self.drawers = connections
+        if (len(self.drawers) <= 0):
+            return
         self.drawer = self.pick_drawer()
         self.guessed = []
+        
+        # Current drawer 
+        print("[DRAWER] The drawer is {}({})".format(self.drawer.name, self.drawer.ip)) 
 
-        print("Broadcasting round beginning")
         # Broadcast round beginning
         self.broadcast("chat", "Round {} is beginning and {}({}) is the drawer.".format(self.round, self.drawer.name, self.drawer.ip))
+        
+        print("[WORDS] The picked words are: {}".format(self.drawer_word))        
         self.pick_word()
-        self.send_message(self.drawer.conn, "chat", "Your word is {}.".format(self.round_word))
-        print("[GAME] {}({}) has picked a word! {}".format(player.name, player.ip, self.round_word)) 
-        print("[WORD] The picked word is {}".format(self.round_word))
+        self.send_message(self.drawer.conn, "chat", "Your word is {}.".format(self.drawer_word))
+        print("[WORD] The picked word is {}".format(self.drawer_word))
         # Start timer, allow drawing player to send images to server
         self.img = Image.new('RGB', (400, 400), "white")
         #img.save("round{}.png".format(str(self.round)), "PNG")
 
         start_time = time.time() # Round starting time
-        self.broadcast("chat", "Round {} is starting! You have 60 seconds to guess the word!".format(self.round))
+        self.broadcast("chat", "Round {} is starting! You have 60 seconds to guess the word!".format(self.round), self.drawer.conn)
         self.started_guessing = True
         
         # Looping until 1. Word gets guessed || 2. 60 Seconds have passed.
         while True:
             self.filter_drawers()
             connections = [player.conn for player in self.players]
-            rd, _, _ = select(connections, [], [])
+            rd, _, _ = select(connections, [], [], 0)
             for player in rd:
                 self.accept_input(player) 
 
@@ -296,10 +364,14 @@ class Game(object):
             if (len(self.guessed) == len(self.players) - 1):
                 self.broadcast("chat", "Everyone guessed the correct word!")
                 break
-            if (end_time - start_time > 60):
-                self.broadcast("chat", "Round ended! No one guessed the correct word.")
+            elif (end_time - start_time > 60):
+                if (len(self.guessed) == 0):
+                    self.broadcast("chat", "Round ended! No one guessed the correct word.")
+                else:
+                    self.broadcast("chat", "Round ended! Correct guessers: {}".format([player.name for player in self.guessed]))
                 break
-        self.broadcast("chat", "The correct word was: {}".format(self.round_word))
+            
+        self.broadcast("chat", "The correct word was: {}".format(self.drawer_word))
 
         # Score delivery
         # 1st guesser = 4
@@ -311,13 +383,13 @@ class Game(object):
                 self.send_message(player.conn, "chat", "You have received 4 points for being the first to guess the word!")
                 player.score += 4
             elif i + 1 == 2:
-                self.send_message(player.conn, "chat", "You have received 4 points for being the first to guess the word!")
+                self.send_message(player.conn, "chat", "You have received 3 points for being the second to guess the word!")
                 player.score += 3
             elif i + 1 == 3:
-                self.send_message(player.conn, "chat", "You have received 4 points for being the first to guess the word!")
+                self.send_message(player.conn, "chat", "You have received 2 points for being the third to guess the word!")
                 player.score += 2
             else:
-                self.send_message(player.conn, "chat", "You have received 4 points for being the first to guess the word!")
+                self.send_message(player.conn, "chat", "You have received 1 point for correctly guessing the word!")
                 player.score += 1
 
     def pick_word(self):
@@ -326,7 +398,7 @@ class Game(object):
         """
         # Let the drawer know he has 30 seconds and send him the list of words.
         self.drawer.conn.send("chat You_have_30_seconds_to_pick_a_word\n\r")
-        self.drawer.conn.send("pick " + '_'.join(self.round_word) + "\n\r")   
+        self.drawer.conn.send("pick " + '_'.join(self.drawer_word) + "\n\r")   
         cur_time = time.time()
         
         # Loop until 1. The drawer picks a word || 2. 30 Seconds have been passed.
@@ -339,13 +411,13 @@ class Game(object):
 
             end_time = time.time() 
             if (end_time - cur_time > 30):
-                self.round_word = choice(self.round_word)
-                self.broadcast("chat", "The drawer hasn\'t picked a word, so a word has been picked randomly.".format(self.round_word))
-                print("[GAME] {}({}) hasn\'t picked a word so the word {} has been chosen randomly.".format(player.name, player.ip, self.round_word))
+                self.drawer_word = choice(self.drawer_word)
+                self.broadcast("chat", "The drawer hasn\'t picked a word, so a word has been picked randomly.".format(self.drawer_word))
+                print("[GAME] {}({}) hasn\'t picked a word so the word {} has been chosen randomly.".format(player.name, player.ip, self.drawer_word))
                 break
         else:
             # In case the drawer picked a word
-            print("[GAME] {}({}) has picked a word! {}".format(player.name, player.ip, self.round_word))
+            print("[GAME] {}({}) has picked a word! {}".format(self.drawer.name, self.drawer.ip, self.drawer_word))
     
     def reset_board(self):
         """
@@ -359,21 +431,27 @@ class Game(object):
         Main game loop
         """
         for rnd in range(1, self.max_rounds + 1):
-             self.execute_round(rnd)
-        
+            print("===========================")
+            print("          ROUND {}         ".format(rnd))
+            print("===========================")
+            self.drawers = [player for player in self.players]
+            while len(self.drawers) != 0:
+                self.execute_round(rnd)
+                print("---------------------------")
+
         # Get final results.
         self.sort_players()
         self.send_results()
     
     def send_results(self):
-        winner_name = self.players[0].name
-        winner_IP = self.players[0].ip
-        winner_score = self.players[0].score
-        print("Players : \{")
+        winner_name = self.players[-1].name
+        winner_IP = self.players[-1].ip
+        winner_score = self.players[-1].score
+        print("Players : {")
         print("\t{}({}) : {},".format(winner_name, winner_IP, winner_score))
-        for player in self.players[1:]:
+        for player in (self.players[:-1])[::-1]:
             print("\t{}({}) : {},".format(player.name, player.ip, player.score))
-        print("\}")
+        print("}")
         self.broadcast("chat", "{}({}) has won the game with {} points!".format(winner_name, winner_IP, winner_score))
     
     def send_image(self, conn):
@@ -451,6 +529,15 @@ class Game(object):
         """
         conn, addr = serv.accept()
         print("[-] Player({}) is attempting to connect...".format(str(addr[0])))
+        
+        if (len(self.players) == self.player_limit):
+            conn.send("Lobby filled. cannot join")
+            conn.close()
+        
+        if self.start_game:
+            conn.send("Game already started.")
+            conn.close()
+
         if True: #(not self.__in_players__(None , addr)):
             print("\t[+] Player({}) is now connected.".format(str(addr[0])))
             conn.setblocking(0) # In order for the .recv() to not block
@@ -569,7 +656,7 @@ class Game(object):
             print("[INPUT] Received invalid input")
             return 
         if command == "username" and not self.start_game:
-            if player_name == None and command == "username":
+            if player_name is None and command == "username":
                 regex = r"^[a-zA-Z0-9]{1,20}"
                 if (not re.match(regex, message)):
                     self.send_message(serv, "chat", "Your name needs to have only alphabetical characters from 0 to 9")
@@ -598,9 +685,9 @@ class Game(object):
                 """
                 Word picking phase, the drawer picks a word
                 """
-                if message in self.round_word:
+                if message in self.drawer_word:
                     # Word has been picked
-                    self.round_word = message
+                    self.drawer_word = message
                     self.picked_word = True
                     #self.broadcast("chat {}({})_has_picked_the_word:_{}".format(player_name, player_IP, message))
                    
@@ -609,10 +696,10 @@ class Game(object):
                 """
                 Getting a guess from one of the players.
                 """
-                if message == self.round_word:
+                if message == self.drawer_word:
                     self.broadcast("chat", "{}({}) has guessed the correct word!".format(player_name, player_IP))
                     self.guessed.append(player)
-                    #self.broadcast("chat", "The correct word was {}".format(self.round_word))
+                    #self.broadcast("chat", "The correct word was {}".format(self.drawer_word))
                     #self.started_guessing = False
                 else:
                     command = split_data[0]
@@ -644,7 +731,7 @@ class Game(object):
                 split_coordinate = cord.split(",") # [250, 300]
                 temp_cords = [int(x) for x in split_coordinate[:2]] # [250, 300]
                 for i in temp_cords:
-                    if i >= 400 or i <= 0:
+                    if i >= 400 or i < 0:
                         self.send_message(serv, "chat", "Sent invalid coordinates.")
                         return
                 cords += [tuple(temp_cords)]
@@ -692,11 +779,14 @@ class Game(object):
         conn.close()
 
     def __remove_player__(self, conn):
-        for i, player in enumerate(self.players):
-            if (player.conn == conn):
-                del self.players[i]
+        for player in enumerate(self.players):
+            if (player.conn == conn)
+                self.players.remove(player)
+                if (player in self.drawers):
+                    self.drawers.remove(player)
+
                 break
-                
+                    
     def __get_player__(self, conn):
         """
         Getting player from player list(`self.player`) by connection.
@@ -734,8 +824,12 @@ def erase_rounds():
             print("\t\t[-] Erased photo {} from {}".format(round_pic, os.getcwd()))
     print("\t[ERASE] Done cleaning up round canvases.")
 """
+class RangeError(Exception):
+    pass
+
 class ServiceExit(Exception):
     pass
+
 """
 def handler(signum, frame):
     
@@ -746,9 +840,46 @@ def handler(signum, frame):
 
 def main():
     print("Starting program...")
-   # signal.signal(signal.SIGINT, handler)
+    # signal.signal(signal.SIGINT, handler)
     try:
-        game = Game(8080, 5, 10)
+        # get port
+        port = raw_input("Port: ")
+        
+        # validate port
+        try:
+            port = int(port)
+            if (port < 0 or port > 65535):
+                raise RangeError("")
+        except ValueError:
+            print("The port needs to be a number")
+            exit(1)
+        except RangeError:
+            print("The port needs to be between 0 <= port <= 65535")
+            exit(1)
+        
+        
+        # get player limit
+        player_limit = raw_input("Player Limit: ")
+        try: 
+            player_limit = int(player_limit)
+            if (player_limit < 2):
+                print("Player limit has to be larger than 1")
+                exit(1)
+        except ValueError:
+            print("Player limit is a number")
+            exit(1)
+
+        # get max round number
+        max_round = raw_input("Rounds: ")
+        try:
+            max_round = int(max_round)
+        except ValueError:
+            print("Max round must be a number")
+            exit(1)
+    
+        # Launch game
+        game = Game(port, player_limit, max_round)
+
     except ServiceExit:
         print("Exiting...")
 

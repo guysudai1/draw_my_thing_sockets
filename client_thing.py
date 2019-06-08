@@ -24,7 +24,7 @@ def get_messages(sock):
 def main():
     IP   = '127.0.0.1'
     PORT = 8080
-    username = 'shimi'
+    username = 'GURMA'
     sock = connect((IP, PORT), username)
     t = Thread(target=get_messages, args=(sock, ))
     t.start()
