@@ -12,12 +12,6 @@ class Application(object):
     def createWidgets(self):
         self.main_frame.pack(fill=BOTH, expand=True)
         canvas = Canvas(self.main_frame, bg="white", height=800, width=600)
-        top_frame = Frame(self.main_frame, height=50, bg="white")
-        top_frame.pack(side=TOP, fill=X)
-        bottom_frame = Frame(self.main_frame, height=50, bg="white")
-        bottom_frame.pack(side=BOTTOM, fill=X)
-        right_frame = Frame(self.main_frame, height=50, bg="white")
-        right_frame.pack(side=RIGHT, fill=X)
         j=0
         for i, tool in enumerate(self.tool_box):
             tool_button = Button(canvas, width=31, height=2, bg="black",fg="white",text=tool,command = partial(command_color, "white"))
@@ -27,11 +21,11 @@ class Application(object):
         j = 0    
         for i, color in enumerate(self.colors):
             color_button = Button(canvas, bg=color, fg="red", command = partial(command_color, color),width=5)
-            color_button.place(x=45*j+130,y=495)
+            color_button.place(x=45*j+130,y=572)
             j+=1
             
         chat_entry = Entry(canvas, bd =5,)
-        chat_entry.place(x=670,y=495)
+        chat_entry.place(x=670,y=570)
 
         line1 = canvas.create_rectangle(120,0,130,600,fill="black") 
         line2 = canvas.create_rectangle(580,0,590,600,fill="black")
@@ -51,7 +45,7 @@ class Application(object):
            
     def init_master(self):
         self.master.title('Draw My Thing v1')
-        self.master.geometry("800x623")
+        self.master.geometry("800x600")
         self.master.resizable(0,0)
         
     def __init__(self):
