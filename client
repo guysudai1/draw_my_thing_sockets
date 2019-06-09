@@ -1,4 +1,4 @@
-import socket, select, signal, sys, threading
+import socket, select, signal, sys, threading, time
 import os
 
 
@@ -10,7 +10,11 @@ def connect(username):
     sock.connect(('10.67.101.113', 8080))
     sock.send("username " + username)
 
-
+def send_mouse_cor(x_cor,y_cor):
+    sock = socket.socket()
+    sock.connect(('10.67.101.113', 8080))
+    sock.send("change_canvas %d,%d " % (x_cor, y_cor))
+         
 def recv_image(sock):
     sock = socket.socket()
     info = sock.recv(1024)# block_count , file_format, block_size
@@ -27,4 +31,5 @@ def recv_image(sock):
         image.write(data)
 
 
-connect("shimi")
+#connect("shimi")
+
