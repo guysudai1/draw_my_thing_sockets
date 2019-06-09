@@ -3,6 +3,7 @@ from functools import partial
 import client
 import time
 
+
 def command_color(color):
         mouse_color = color
         print mouse_color
@@ -42,7 +43,7 @@ class Application(object):
     def motion(self,event):
         x, y = event.x, event.y
         if(x >= 0 and x<=800 and y >= 0 and y<=623):
-            print('{}, {}'.format(x, y))
+            client.send_mouse_cor(x,y)
             time.sleep(0.1);
         
     def destroy_master(self):
