@@ -63,11 +63,11 @@ class Player(object):
     @state      = A variable that represents        (int type)
                   effects from casted spells
     """
-    def __init__(self, conn, name, abilities, ip):
+    def __init__(self, conn, name, ip):
         self.name       = name
         self.abilities  = []
         self.conn       = conn 
-        self.score      = 0
+        self.score      = 10 # Should be 0 TODO 
         self.ip         = ip
         self.state      = 0 # State is represented by each bit of the number
         # 0           0      0          0       0           0           0           0
@@ -79,8 +79,10 @@ class Player(object):
         self.__create_abilities__()
     
     def __create_abilities__(self):
-        # TODO : Add abilities to self.abilities
-        pass
+            
+        self.abilities.append(Ability(2 * len(self.players), "blindteam", 10, 4)) # Cost, name, cooldown, effect time
+        self.abilities.append(Ability(5, "unblind", 20, 0)) # Cost, name, cooldown
+        self.abilities.append(Ability(2, "blindperson", 3, 4))
 
 
     def __get_place__(self, ability_name):
@@ -228,7 +230,7 @@ class Game(object):
 
             for serv in read:
                 # Check if a player is connecting
-                if serv is self.server:
+                if serv == self.server:
                     self.accept_connection(serv)
                 else:
                     self.accept_input(serv)
@@ -377,6 +379,7 @@ class Game(object):
         self.round = rnd
         self.picked_word = False
         self.started_guessing = False
+        self.drawer_disconnected = False
         self.drawer_word = next(self.words)
         self.reset_board()
         
@@ -395,6 +398,9 @@ class Game(object):
         
         print("[WORDS] The picked words are: {}".format(self.drawer_word))        
         self.pick_word()
+        if (self.drawer_disconnected):
+            self.broadcast("chat", "The drawer has disconnected...")
+            return
         self.send_message(self.drawer.conn, "chat", "Your word is {}.".format(self.drawer_word))
         print("[WORD] The picked word is {}".format(self.drawer_word))
         # Start timer, allow drawing player to send images to server
@@ -406,7 +412,7 @@ class Game(object):
         self.started_guessing = True
         
         # Looping until 1. Word gets guessed || 2. 60 Seconds have passed.
-        while self.started_guessing:
+        while self.started_guessing and not self.drawer_disconnected:
             self.filter_drawers()
             connections = [player.conn for player in self.players]
             rd, _, _ = select(connections, [], [], 0)
@@ -414,6 +420,8 @@ class Game(object):
                 self.accept_input(player) 
 
             end_time = time.time()
+            if (self.drawer_disconnected):
+                break
             if (len(self.guessed) == len(self.players) - 1):
                 self.broadcast("chat", "Everyone guessed the correct word!")
                 break
@@ -423,7 +431,9 @@ class Game(object):
                 else:
                     self.broadcast("chat", "Round ended! Correct guessers: {}".format([player.name for player in self.guessed]))
                 break
-            
+        if (self.drawer_disconnected):
+            self.broadcast("chat", "The drawer has disconnected...")
+            return
         self.broadcast("chat", "The correct word was: {}".format(self.drawer_word))
 
         # Score delivery
@@ -456,7 +466,7 @@ class Game(object):
         cur_time = time.time()
         
         # Loop until 1. The drawer picks a word || 2. 30 Seconds have been passed.
-        while not self.picked_word:
+        while not self.picked_word and not self.drawer_disconnected:
             self.filter_drawers()
             connections = [player.conn for player in self.players]
             rd, _, _ = select(connections, [], [], 0)
@@ -596,12 +606,7 @@ class Game(object):
             print("\t[+] Player({}) is now connected.".format(str(addr[0])))
             conn.setblocking(0) # In order for the .recv() to not block
                 
-            abilities = [] 
-            abilities.append(Ability(2 * len(self.players), "blind_team", 10, 4)) # Cost, name, cooldown, effect time
-            abilities.append(Ability(5, "unblind", 20, 0)) # Cost, name, cooldown
-            abilities.append(Ability(2, "blind_person", 3, 4))
-
-            player = Player(conn, 10, None, abilities, addr[0])
+            player = Player(conn, None, addr[0])
             self.players.append(player)
         else:
             print("\t[+] Player({}) is already connected from this IP.".format(str(addr[0])))
@@ -641,7 +646,7 @@ class Game(object):
         This function accepts data smaller than 150 characters, and kicks the socket otherwise.
         This function reads data until "\n\r" and returns the data or None incase invalid data.
         """
-        if (not sock in self.players: return None
+        if (self.__get_player__(sock) is None): return None
         end = "\n\r"
         hit = 0
         data = ""
@@ -674,7 +679,7 @@ class Game(object):
         return data
 
     def send_message(self, serv, command, message):
-        if (not serv in self.players): return
+        if (self.__get_player__(serv) is None): return
         message = "_".join(message.split(' '))
         serv.send("{} {}\n\r".format(command, message))
 
@@ -687,7 +692,6 @@ class Game(object):
         # Receive data
         data = serv.recv(20, socket.MSG_PEEK) # Looks like this: {command} sentence : Example chat start
         # Player data 
-        self.filter_drawers()
         player = self.__get_player__(serv) 
         if not data:
             """
@@ -695,7 +699,7 @@ class Game(object):
             """
             if player == self.drawer:
                 self.started_guessing = False
-            print("\t[-] Player {}({}) has disconnected...".format(player_name, player_IP))
+            print("\t[-] Player {}({}) has disconnected...".format(player.name, player.ip))
             self.__remove_player__(serv)
             serv.close()
             return
@@ -709,17 +713,16 @@ class Game(object):
         # Check if the data isn't empty (means the client disconnected) 
         split_data = data.split(' ') # Should be in the form of: [{command}, sentence]
         if (len(split_data) < 2): return
-        command = split_data[0].lower()
-        message = split_data[1].lower().strip(" ")
-        print("[INPUT] Received input from {}({}) : {}".format(str(player_name), player_IP, data))
+        print("[INPUT] Received input from {}({}) : {}".format(str(player.name), player.ip, data))
 
         # Regex patterns for certain commands
         regex_username      = r"^username [a-z0-9]{1,20}$"
         regex_chat          = r"^chat [a-zA-Z0-9 ,.]{1,150}$"
         regex_canvas_change = r"^canvas_change (([0-9]{1,3},){2}[a-zA-Z0-9]{6} )+$"
-        regex_cast          = r"^cast [a-z]{1,20}(?(?= )( [a-z0-9]{1,20}))$"
-
-        if re.match(regex, data) and (not self.start_game and player.name is None):
+        regex_cast          = r"^cast [a-z]{1,20}$"
+        regex_cast_2        = r"^cast [a-z]{1,20} [a-z0-9]{1,20}$"
+        if re.match(regex_username, data) and (not self.start_game and player.name is None):
+            message = split_data[1].strip(" ")
             regex = r"^[a-z0-9]{1,20}$"
             if (not re.match(regex, message)):
                 self.send_message(serv, "chat", "Your name needs to have only alphabetical characters and numbers from 0 to 9(only lowercase)")
@@ -765,8 +768,8 @@ class Game(object):
             elif self.started_guessing and player.conn == self.drawer.conn:
                 self.send_message(player.conn, "chat", "You are the drawer, you cannot type in chat.")
                 return
-
-            self.broadcast(command, "{}: {}".format(player.name, message), serv)
+            
+            self.broadcast("chat", "{}: {}".format(player.name, message), serv)
 
         elif re.match(regex_canvas_change, data + " ") and self.drawer.conn == serv:
             """
@@ -778,7 +781,7 @@ class Game(object):
             message = split_data[1:] # "250,300,d5d5d5", "100,50,d5d5d5", "70,90,000000"
             self.__paint_coordinates__(serv, message) 
 
-        elif re.match(regex_cast, data) and self.drawer.conn != serv:
+        elif (re.match(regex_cast, data) or re.match(regex_cast_2, data)) and self.drawer.conn != serv:
             regex = "^cast [a-z]{1,20}(?(?= )( [a-z0-9]{1,20}))$"
             ability_name = split_data[1].lower().strip(" ")
             info = ""
@@ -877,11 +880,13 @@ class Game(object):
 
         @conn       = connection to remove.
         """
-        for player in enumerate(self.players):
-            if (player.conn == conn)
+        for player in self.players:
+            if (player.conn == conn):
                 self.players.remove(player)
                 if (player in self.drawers):
                     self.drawers.remove(player)
+                if (player == self.drawer):
+                    self.drawer_disconnected = True        
                 break
                     
     def __get_player__(self, conn):
