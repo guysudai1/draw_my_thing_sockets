@@ -301,8 +301,9 @@ class Game(object):
 
 
     def cast(self, player, ability_name, info=""):
-        # TODO : Add a function that casts the ability(__cast__ checks for requirements)
 
+        ability_name = ability_name.lower()
+        # Validate cast
         message, success = self.__cast__(player, ability_name, info)
         if (success == False):
             self.send_message(player.conn, "chat", message)
@@ -311,6 +312,19 @@ class Game(object):
 
         print("[CAST] {} has been casted by {}".format(ability_name, player.name))
         self.broadcast("chat", "{} ability has been casted by {}".format(ability_name, player.name))
+        if (ability_name == "blind_team"):
+            for cur_player in self.players:
+                if (cur_player != player):
+                    # Set player state and remove 
+                    cur_player.add_state(ability_name)
+                    remove_state_timer = Timer(casted_ability.time_lasting, cur_player.remove_state, [ability_name])
+                    remove_state_timer.start()
+
+        elif (ability_name == "unblind"):
+            player.remove_state(ability_name)
+        elif (ability_name == "blind_person"):
+            # Make prompt pop up and get player's name
+            pass
 
 
     def __cast__(self, player, ability_name, info=""):
@@ -341,7 +355,6 @@ class Game(object):
         if (not casted_ability.cast()):
             return "This ability is on cooldown", False
         
-        # TODO : Add abilities which require username, check if username is valid
         username_abilities = ["disabletyping", "blindperson"]
         if ability_name in username_abilities:
             self.filter_drawers()
@@ -353,22 +366,7 @@ class Game(object):
 
         return "OK", True
         
-               ability_name = ability_name.lower()
-        if (ability_name == "blind_team"):
-            for cur_player in self.players:
-                if (cur_player != player):
-                    # Set player state and remove 
-                    cur_player.add_state(ability_name)
-                    remove_state_timer = Timer(casted_ability.time_lasting, cur_player.remove_state, [ability_name])
-                    remove_state_timer.start()
-        elif (ability_name == "unblind"):
-            player.remove_state(ability_name)
-        elif (ability_name == "blind_person"):
-            # Make prompt pop up and get player's name
-            pass
-    
-        return "OK", True 
-
+                   
     def execute_round(self, rnd):
         """
         @rnd = round number
@@ -385,8 +383,7 @@ class Game(object):
 
         # Get all player connections )
         self.filter_drawers()
-        if (len(self.drawers) <= 0):
-            return
+        if (len(self.drawers) <= 0): return
         self.drawer = self.pick_drawer()
         self.guessed = []
         
@@ -409,7 +406,7 @@ class Game(object):
         self.started_guessing = True
         
         # Looping until 1. Word gets guessed || 2. 60 Seconds have passed.
-        while True:
+        while self.started_guessing:
             self.filter_drawers()
             connections = [player.conn for player in self.players]
             rd, _, _ = select(connections, [], [], 0)
@@ -452,6 +449,7 @@ class Game(object):
         """
         Lets the artist choose a word out of three words
         """
+        if (not self.drawer in self.players): return
         # Let the drawer know he has 30 seconds and send him the list of words.
         self.drawer.conn.send("chat You_have_30_seconds_to_pick_a_word\n\r")
         self.drawer.conn.send("pick " + '_'.join(self.drawer_word) + "\n\r")   
@@ -643,6 +641,7 @@ class Game(object):
         This function accepts data smaller than 150 characters, and kicks the socket otherwise.
         This function reads data until "\n\r" and returns the data or None incase invalid data.
         """
+        if (not sock in self.players: return None
         end = "\n\r"
         hit = 0
         data = ""
@@ -673,9 +672,11 @@ class Game(object):
                 hit += 1
             data += char
         return data
-    def send_message(self, recv, command, message):
+
+    def send_message(self, serv, command, message):
+        if (not serv in self.players): return
         message = "_".join(message.split(' '))
-        recv.send("{} {}\n\r".format(command, message))
+        serv.send("{} {}\n\r".format(command, message))
 
     def accept_input(self, serv):
         """
@@ -686,13 +687,14 @@ class Game(object):
         # Receive data
         data = serv.recv(20, socket.MSG_PEEK) # Looks like this: {command} sentence : Example chat start
         # Player data 
-        player = self.__get_player__(serv)
-        player_IP = player.ip
-        player_name = player.name  
+        self.filter_drawers()
+        player = self.__get_player__(serv) 
         if not data:
             """
             Handling player disconnections
             """
+            if player == self.drawer:
+                self.started_guessing = False
             print("\t[-] Player {}({}) has disconnected...".format(player_name, player_IP))
             self.__remove_player__(serv)
             serv.close()
@@ -708,35 +710,37 @@ class Game(object):
         split_data = data.split(' ') # Should be in the form of: [{command}, sentence]
         if (len(split_data) < 2): return
         command = split_data[0].lower()
-        message = split_data[1].lower()
+        message = split_data[1].lower().strip(" ")
         print("[INPUT] Received input from {}({}) : {}".format(str(player_name), player_IP, data))
-        if (not self.is_valid(command)):
-            print("[INPUT] Received invalid input")
-            return 
-        if command == "username" and not self.start_game:
-            if player_name is None and command == "username":
-                regex = r"^[a-zA-Z0-9]{1,20}$"
-                if (not re.match(regex, message)):
-                    self.send_message(serv, "chat", "Your name needs to have only alphabetical characters from 0 to 9")
+
+        # Regex patterns for certain commands
+        regex_username      = r"^username [a-z0-9]{1,20}$"
+        regex_chat          = r"^chat [a-zA-Z0-9 ,.]{1,150}$"
+        regex_canvas_change = r"^canvas_change (([0-9]{1,3},){2}[a-zA-Z0-9]{6} )+$"
+        regex_cast          = r"^cast [a-z]{1,20}(?(?= )( [a-z0-9]{1,20}))$"
+
+        if re.match(regex, data) and (not self.start_game and player.name is None):
+            regex = r"^[a-z0-9]{1,20}$"
+            if (not re.match(regex, message)):
+                self.send_message(serv, "chat", "Your name needs to have only alphabetical characters and numbers from 0 to 9(only lowercase)")
+                return
+            
+            for player in self.players:
+                if (player.name == message):
+                    self.send_message(serv, "chat", "Another player has this name. Please choose another name.")
                     return
-                for player in self.players:
-                    if (player.name == message):
-                        self.send_message(serv, "chat", "Another player has this name. Please choose another name.")
-                        return
-                print("Set username for player {} : {}".format(player_IP, message))
-                player.name = message
+            
+            print("Set username for player {} : {}".format(player.ip, message))
+            player.name = message
                     
-        elif command == "chat":
-            # TODO : Add to chat {player_name}: {player_message}
-            regex = r"^[a-zA-Z0-9 ]{1,152}$"
+        elif re.match(regex_chat, data):
+            message = " ".join(split_data[1:]).strip(" ")
+            regex = r"^[a-zA-Z0-9 ,.]{1,150}$"
             if (not re.match(regex, message)):
                 self.send_message(serv, "chat", "Your message needs to be only alphabetical characters. Please send another one.")
                 return
+
             if not self.start_game:
-                # Loading screen runs until 1. Player limit is reached || 2. First player to join types start
-                command = split_data[0]
-                message = split_data[1]
-                self.broadcast(command, message, serv)
                 if player == self.players[0] and message == "start":
                     self.start_game = True
                
@@ -748,64 +752,42 @@ class Game(object):
                     # Word has been picked
                     self.drawer_word = message
                     self.picked_word = True
-                    #self.broadcast("chat {}({})_has_picked_the_word:_{}".format(player_name, player_IP, message))
-                   
+                    return 
                     
-            elif self.started_guessing and not player.conn == self.drawer.conn:
+            elif self.started_guessing and (player.conn != self.drawer.conn and message == self.drawer_word):
                 """
                 Getting a guess from one of the players.
                 """
-                if message == self.drawer_word:
-                    self.broadcast("chat", "{}({}) has guessed the correct word!".format(player_name, player_IP))
-                    self.guessed.append(player)
-                    #self.broadcast("chat", "The correct word was {}".format(self.drawer_word))
-                    #self.started_guessing = False
-                else:
-                    command = split_data[0]
-                    message = split_data[1]
-                    self.broadcast(command, message, serv)                    
+                self.broadcast("chat", "{}({}) has guessed the correct word!".format(player.name, player.ip))
+                self.guessed.append(player)
+                return
+
             elif self.started_guessing and player.conn == self.drawer.conn:
                 self.send_message(player.conn, "chat", "You are the drawer, you cannot type in chat.")
-            else:
-                command = split_data[0]
-                message = split_data[1]
-                # Broadcasting the chat messages if no other condition is hit.
-                self.broadcast(command, message, serv)
+                return
 
-        elif command == "change_canvas" and self.drawer.conn == serv:
+            self.broadcast(command, "{}: {}".format(player.name, message), serv)
+
+        elif re.match(regex_canvas_change, data + " ") and self.drawer.conn == serv:
             """
             @message = list of coordinates
 
             Getting a list of coordinates to change + color
             """
             # change_canvas 250,300,E555D 100,50,E5E5E
-            regex = r"^(([0-9]{1,3},){2}[a-zA-Z0-9]{6})$"
-            message = split_data[1:] # "250,300", "100,50", "70,90"
-            cords = []
-            colors = []
-            for cord in message:
-                if (not re.match(regex, cord)):
-                    self.send_message(serv, "chat", "Sent invalid coordinates.")
-                    return
-                split_coordinate = cord.split(",") # [250, 300]
-                temp_cords = [int(x) for x in split_coordinate[:2]] # [250, 300]
-                for i in temp_cords:
-                    if i >= 400 or i < 0:
-                        self.send_message(serv, "chat", "Sent invalid coordinates.")
-                        return
-                cords += [tuple(temp_cords)]
-                colors.append(split_coordinate[2])
-                
-            cords = [(int(cord[0]), int(cord[1])) for cord in cords]
-            RGBColors = []
-            for color in colors:
-                RGBColors.append((int(color[:2], 16), int(color[2:4], 16),int(color[4:], 16), 255))
-            for cord, color in zip(cords, RGBColors):
-                self.img.putpixel(cord, color)
+            message = split_data[1:] # "250,300,d5d5d5", "100,50,d5d5d5", "70,90,000000"
+            self.__paint_coordinates__(serv, message) 
 
-        elif command == "cast" and self.drawer.conn != serv:
-            # TODO : Add spellcasting
-            pass
+        elif re.match(regex_cast, data) and self.drawer.conn != serv:
+            regex = "^cast [a-z]{1,20}(?(?= )( [a-z0-9]{1,20}))$"
+            ability_name = split_data[1].lower().strip(" ")
+            info = ""
+            if (len(split_data) == 3): info = split_data[2]
+            self.cast(player, ability_name, info)
+            
+        else:
+            print("[INPUT] Invalid input : {}".format(data))
+            
         
         """
         elif not self.receiving_image and command == "canvas_change":
@@ -836,19 +818,70 @@ class Game(object):
                 self.receiving_image = self.receiving_times != 0
         """
 
+    def __paint_coordinates__(self, player, coordinate_array):
+        """
+        Paints coordinates given.
+
+        @player           = player who painted the pixels
+        @coordinate_array = coordinates to paint with color : ["20,100,d5d5d5"]
+        """
+        # Test coordinate validity
+        regex = r"^(([0-9]{1,3},){2}[a-zA-Z0-9]{6})$"
+        # Coordinate array (row,col)
+        cords = [] 
+        # Color attached with coordinate array(d5d5d5)
+        colors = []
+        # Validate coordinates
+        for cord in coordinate_array:
+            if (not re.match(regex, cord)):
+                self.send_message(player, "chat", "Sent invalid coordinates.")
+                return
+            split_coordinate = cord.split(",") # [250, 300]
+            temp_cords = [int(x) for x in split_coordinate[:2]] # [250, 300]
+            for i in temp_cords:
+                if i >= 400 or i < 0:
+                    self.send_message(player, "chat", "Sent invalid coordinates.")
+                    return
+
+            cords.append(tuple(temp_cords))
+            colors.append(split_coordinate[2])
+    
+        # turn coordinates to int
+        cords = [(int(cord[0]), int(cord[1])) for cord in cords]
+        RGBColors = []
+        # Change hex color to RGB color
+        for color in colors:
+            RGBColors.append((int(color[:2], 16), int(color[2:4], 16),int(color[4:], 16), 255))
+        # Put pixel in image
+        for cord, color in zip(cords, RGBColors):
+            self.img.putpixel(cord, color)
+
+
     def __kick_player__(self, conn, reason):
+        """
+        This function kicks out / disconnects a player.
+        
+        @conn       = connection to disconnect.
+        @reason     = kicking reason.
+        """
+        
         player = self.__get_player__(conn)
         print("[KICK] kicking player {}({}) for {}".format(player.name, player.ip, reason))
         self.__remove_player__(conn)
         conn.close()
 
+
     def __remove_player__(self, conn):
+        """
+        This function removes a player from self.players and self.drawers list
+
+        @conn       = connection to remove.
+        """
         for player in enumerate(self.players):
             if (player.conn == conn)
                 self.players.remove(player)
                 if (player in self.drawers):
                     self.drawers.remove(player)
-
                 break
                     
     def __get_player__(self, conn):
