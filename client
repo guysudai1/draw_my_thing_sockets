@@ -13,7 +13,8 @@ def connect(username):
 def send_mouse_cor(x_cor,y_cor):
     sock = socket.socket()
     sock.connect(('10.67.101.113', 8080))
-    sock.send("change_canvas %d,%d " % (x_cor, y_cor))
+    hexcolor = "000000" # TODO : Add color to change pixel to. 
+    sock.send("change_canvas %d,%d,%s\n\r" % (x_cor, y_cor, hex_color))
          
 def recv_image(sock):
     sock = socket.socket()
