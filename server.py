@@ -46,7 +46,7 @@ class Ability(object):
         if (self.last_used == None):
             self.last_used = curtime
             return True
-        elif (curtime - self.last_used >= cooldown):
+        elif (curtime - self.last_used >= self.cooldown):
             self.last_used = curtime
             return True
         return False
@@ -63,7 +63,7 @@ class Player(object):
     @state      = A variable that represents        (int type)
                   effects from casted spells
     """
-    def __init__(self, conn, name, ip):
+    def __init__(self, conn, name, ip, player_count):
         self.name       = name
         self.abilities  = []
         self.conn       = conn 
@@ -76,14 +76,24 @@ class Player(object):
         # person             Specific
 
         # Add abilities to each player's kit
-        self.__create_abilities__()
-    
-    def __create_abilities__(self):
+        self.__create_abilities__(player_count)
+
+    def __repr__(self):
+        return "{}: [\nscore: {}\nip: {},\nstate: {},\nabilities: [\n\t\t{}\n]\n]".format(self.name, self.score, self.ip, self.state, self.abilities)
+    def __create_abilities__(self, player_count):
             
-        self.abilities.append(Ability(2 * len(self.players), "blindteam", 10, 4)) # Cost, name, cooldown, effect time
+        self.abilities.append(Ability(2 * player_count, "blindteam", 10, 4)) # Cost, name, cooldown, effect time
         self.abilities.append(Ability(5, "unblind", 20, 0)) # Cost, name, cooldown
         self.abilities.append(Ability(2, "blindperson", 3, 4))
 
+
+    def __get_ability__(self, ability_name):
+        # Get ability in player's inventory
+        for ability in self.abilities:
+            if ability.name == ability_name:
+                return ability
+        return None
+ 
 
     def __get_place__(self, ability_name):
         """
@@ -302,72 +312,7 @@ class Game(object):
         return drawer
 
 
-    def cast(self, player, ability_name, info=""):
-
-        ability_name = ability_name.lower()
-        # Validate cast
-        message, success = self.__cast__(player, ability_name, info)
-        if (success == False):
-            self.send_message(player.conn, "chat", message)
-            print("[CAST] Failed cast by {} for {}".format(player.name, message))
-            return
-
-        print("[CAST] {} has been casted by {}".format(ability_name, player.name))
-        self.broadcast("chat", "{} ability has been casted by {}".format(ability_name, player.name))
-        if (ability_name == "blind_team"):
-            for cur_player in self.players:
-                if (cur_player != player):
-                    # Set player state and remove 
-                    cur_player.add_state(ability_name)
-                    remove_state_timer = Timer(casted_ability.time_lasting, cur_player.remove_state, [ability_name])
-                    remove_state_timer.start()
-
-        elif (ability_name == "unblind"):
-            player.remove_state(ability_name)
-        elif (ability_name == "blind_person"):
-            # Make prompt pop up and get player's name
-            pass
-
-
-    def __cast__(self, player, ability_name, info=""):
-        """
-        This function checks if a player can cast an ability.
-
-        @player         = Player casting the ability. (Player type)
-        @ability_name   = Ability's name.             (Ability type)
-        @info           = Optional, might include affected player's name. (string type)
-
-        return: error_text, is_successful
-        """
-
-        
-        ability_name = ability_name.lower()
-        casted_ability = None
-        # Get ability in player's inventory
-        for ability in player.abilities:
-            if ability.name == ability_name:
-                casted_ability = ability
-                break
-        
-        if (casted_ability is None):
-            return "No such ability exists", False
-        # Check if player has enough points to cast the spell
-        if (player.score < casted_ability.cost):
-            return "Not enough mana", False
-        if (not casted_ability.cast()):
-            return "This ability is on cooldown", False
-        
-        username_abilities = ["disabletyping", "blindperson"]
-        if ability_name in username_abilities:
-            self.filter_drawers()
-            for player in self.players:
-                if player.name == info:
-                    break
-            else:
-                return "No player with such nickname", False
-
-        return "OK", True
-        
+       
                    
     def execute_round(self, rnd):
         """
@@ -521,7 +466,67 @@ class Game(object):
     def send_image(self, conn):
         # TODO: ADD WAY TO SEND IMAGES
         pass
+    
+    def cast(self, ability_name, player, info=""):
+        ability_name = ability_name.lower()
+        # Validate cast
+        message, success = self.__cast__(ability_name, player, info)
+        if (success == False):
+            print("[CAST] Failed cast by {} for {}".format(player.name, message))
+            self.send_message(player.conn, "chat", message)
+            return
 
+        print("[CAST] {} has been casted by {}".format(ability_name, player.name))
+        self.broadcast("chat", "{} ability has been casted by {}".format(ability_name, player.name)) 
+        casted_ability = player.__get_ability__(ability_name)
+        if (ability_name == "blindteam"):
+            for cur_player in self.players:
+                if (cur_player != player and cur_player != self.drawer):
+                    # Set player state and remove 
+                    cur_player.add_state(ability_name)
+                    remove_state_timer = Timer(casted_ability.time_last, cur_player.remove_state, [ability_name])
+                    remove_state_timer.start()
+
+        elif (ability_name == "blindperson"):
+            # Make prompt pop up and get player's name
+            pass
+
+    def __cast__(self, ability_name, player, info=""):
+        """
+        This function checks if a player can cast an ability.
+
+        @player         = Player casting the ability. (Player type)
+        @ability_name   = Ability's name.             (Ability type)
+        @info           = Optional, might include affected player's name. (string type)
+
+        return: error_text, is_successful
+        """
+
+        
+        ability_name = ability_name.lower()
+        casted_ability = player.__get_ability__(ability_name)
+        if (casted_ability is None):
+            return "No such ability exists", False
+        # Check if player has enough points to cast the spell
+        if (player.score < casted_ability.cost):
+            return "Not enough mana", False
+        
+        username_abilities = ["disabletyping", "blindperson"]
+        if ability_name in username_abilities:
+            if player.name == info or player.name == self.drawer.name:
+                return "Can't cast the ability on yourself or on the drawer", False
+            for ply in players:
+                if ply.name == info:
+                    break
+            else:
+                return "No player with such nickname", False
+
+        if (not casted_ability.cast()):
+            return "This ability is on cooldown", False
+        
+        player.score -= casted_ability.cost
+        return "OK", True
+     
     def sort_players(self):
         """
         Sorts the `self.players` list by max score
@@ -606,7 +611,7 @@ class Game(object):
             print("\t[+] Player({}) is now connected.".format(str(addr[0])))
             conn.setblocking(0) # In order for the .recv() to not block
                 
-            player = Player(conn, None, addr[0])
+            player = Player(conn, None, addr[0], len(self.players) + 1)
             self.players.append(player)
         else:
             print("\t[+] Player({}) is already connected from this IP.".format(str(addr[0])))
@@ -780,13 +785,14 @@ class Game(object):
             # change_canvas 250,300,E555D 100,50,E5E5E
             message = split_data[1:] # "250,300,d5d5d5", "100,50,d5d5d5", "70,90,000000"
             self.__paint_coordinates__(serv, message) 
+            
 
         elif (re.match(regex_cast, data) or re.match(regex_cast_2, data)) and self.drawer.conn != serv:
             regex = "^cast [a-z]{1,20}(?(?= )( [a-z0-9]{1,20}))$"
             ability_name = split_data[1].lower().strip(" ")
             info = ""
             if (len(split_data) == 3): info = split_data[2]
-            self.cast(player, ability_name, info)
+            self.cast(ability_name, player, info)
             
         else:
             print("[INPUT] Invalid input : {}".format(data))
