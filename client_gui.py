@@ -25,15 +25,17 @@ class Application(object):
             j+=1
             
         chat_entry = Entry(canvas, bd =5,)
-        chat_entry.place(x=670,y=570)
+        chat_entry.place(x=591,y=570)
+        send_button = Button(canvas, bg = "black", fg="white", text="send",height=1,width=8)
+        send_button.place(x=725,y=570)
 
         line1 = canvas.create_rectangle(120,0,130,600,fill="black") 
         line2 = canvas.create_rectangle(580,0,590,600,fill="black")
+
+        
         canvas.pack(fill=BOTH, expand=1)
         
-        #main_canvas = Frame(self.main_frame, height=300, bg="white")
-        #main_canvas.pack(side=TOP, fill=X)
-       
+    
     def motion(self,event):
         x, y = event.x, event.y
         if(x >= 0 and x<=800 and y >= 0 and y<=623):
