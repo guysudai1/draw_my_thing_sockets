@@ -7,8 +7,8 @@ TODO:
 2. Try playing
 """
 from threading import Timer
-import socket, signal, time, re
-from PIL import Image
+import socket, signal, time, re, os
+from PIL import Image, ImageDraw
 from random import choice
 from select import select
 from sys import exit
@@ -108,7 +108,7 @@ class Player(object):
             place = 1 << 7
         elif ability_name == "disabletyping": # TODO : REPLACE ABILITY
             place = 1 << 6
-        elif ability_name == "getletter":
+        elif ability_name == "giveletter":
             place = 1 << 5
         return place 
 
@@ -156,8 +156,10 @@ class Game(object):
     def __init__(self, port, player_limit, max_rounds):
         # Signal to handle CTRL + C, in case owner wants to stop server.
         signal.signal(signal.SIGINT, self.handler)
-        
+
+        self.painting = False 
         # Setting up initial variables
+        self.started_guessing = False
         # holds whether word has been picked already by the drawer(bool type)
         self.picked_word = False
         # holds the drawer(Player type)
@@ -178,7 +180,8 @@ class Game(object):
         self.player_limit = player_limit
         # Holds amount of rounds to play(int type)
         self.max_rounds = max_rounds
-        
+        self.img = Image.new('RGB', (400, 400), "white")
+
         # Initialize game
         self.__initialize_server__()
         print("Game is running on ({}:{})".format("127.0.0.1", self.port))
@@ -292,7 +295,11 @@ class Game(object):
         rd, _, _ = select(connections, [], [], 0)
         
         for sock in rd:
-            data = sock.recv(152, socket.MSG_PEEK)
+            try:
+                data = sock.recv(152, socket.MSG_PEEK)
+            except socket.error:
+                self.__remove_player__(sock)
+                return
             player = self.__get_player__(sock)
             # Kick player that disconnected
             if not data:
@@ -350,12 +357,19 @@ class Game(object):
         print("[WORD] The picked word is {}".format(self.drawer_word))
         # Start timer, allow drawing player to send images to server
         self.img = Image.new('RGB', (400, 400), "white")
+        self.draw = ImageDraw.Draw(self.img)
         #img.save("round{}.png".format(str(self.round)), "PNG")
 
         start_time = time.time() # Round starting time
         self.broadcast("chat", "Round {} is starting! You have 60 seconds to guess the word!".format(self.round), self.drawer.conn)
         self.started_guessing = True
-        
+
+        # Send word template, for example: "Family home" = "6 4" => "______ ____"
+        string_lengths = []
+        for word in self.drawer_word.split(" "):
+            string_lengths.append(str(len(word)))
+        self.broadcast("word", " ".join(string_lengths))
+
         # Looping until 1. Word gets guessed || 2. 60 Seconds have passed.
         while self.started_guessing and not self.drawer_disconnected:
             self.filter_drawers()
@@ -433,7 +447,8 @@ class Game(object):
         Resets each client's board and sends a white board.
         """
         for client in self.players:
-            self.send_image(client.conn)
+            self.img = Image.new("RGB", (400,400), "white")
+            self.send_image(client)
             
     def game_loop(self):
         """
@@ -446,6 +461,7 @@ class Game(object):
             self.drawers = [player for player in self.players]
             while len(self.drawers) != 0:
                 self.execute_round(rnd)
+                self.reset_board()
                 print("---------------------------")
 
         # Get final results.
@@ -462,10 +478,6 @@ class Game(object):
             print("\t{}({}) : {},".format(player.name, player.ip, player.score))
         print("}")
         self.broadcast("chat", "{}({}) has won the game with {} points!".format(winner_name, winner_IP, winner_score))
-    
-    def send_image(self, conn):
-        # TODO: ADD WAY TO SEND IMAGES
-        pass
     
     def cast(self, ability_name, player, info=""):
         ability_name = ability_name.lower()
@@ -548,9 +560,9 @@ class Game(object):
             for sock in rd:
                 self.accept_input(sock)
         print("[IMAGE] Received new canvas by DRAWER({})".format(self.drawer.ip))
-    	
-    def send_image(self, client, image_name):
-        
+    """ 
+    def send_image(self, client):
+        """    
         Sends an image(canvas) through a socket
          SERVER............................CLIENT
                  SEND IMAGE CONFIRMATION
@@ -559,36 +571,33 @@ class Game(object):
             <--------------------------------- 
                      TRANSFER IMAGE
             ---------------------------------> 
-        
+        """
         message_size = 1024
-        file_path = os.getcwd() + "/" + image_name
-        file_size = int((os.path.getsize(file_path) + message_size - 1) / message_size)
-        file_format = os.path.splitext(file_path)[1]
+        
+        while self.painting: pass	
+	self.img.save("image.png", "PNG")
+        
+        file_path = os.getcwd() + "/image.png"	
+        image = open(file_path, "rb") 
+        content = image.read()
+        
+        file_size = int((len(content) + message_size - 1) / message_size)
+        file_format = "png"
 
         #                                         BLOCK COUNT    FILE FORMAT      BLOCK SIZE
-        file_prop = "change_canvas {} {} {}\n\r".format(str(file_size), file_format, str(message_size))
+        file_prop = "canvas_change {} {} {}\n\r".format(str(file_size), file_format, str(message_size + len("IMG ") + len("\n\r")))
         block_count, file_format, block_size = str(file_size), file_format, str(message_size)
         
-        client.setblocking(1)
-        client.send(str(file_prop))
-        data = client.recv(message)
-        if (data and data.startswith("RECV")):
-            print("[+] Sending " + str(file_size) + " parts...")
-            file_content = ""
-            with open(file_path, "rb") as f:
-                byt = f.read(1)
-                while (byt != ""):
-                    file_content += byt
-                    byt = f.read(1)
-            
-            for i in range(1, file_size + 1):
-                self.filter_drawers()
-                if (not self.__in_players__(client)): return
-                client.send(file_content[:i * message_size])
-                file_content = file_content[i * message_size:]
-            if file_content:
-                client.send(file_content)
-    """     
+        client.conn.send(str(file_prop))
+        #self.img.show()	
+        for i in range(1, file_size + 1):
+            self.filter_drawers()
+            if (not self.__in_players__(client.conn)): return
+            client.conn.send("IMG " + content[:i * message_size] + "\n\r")
+            content = content[i * message_size:]
+
+        if content:
+                client.conn.send("IMG " + content + "\n\r")
 
     def accept_connection(self, serv):
         """
@@ -639,7 +648,7 @@ class Game(object):
         False: otherwise
         Checks if given input is valid or not
         """
-        valid_commands = ['chat', 'change_canvas', 'username', 'cast'] # Pick is sent from the server
+        valid_commands = ['chat', 'canvas_change', 'username', 'cast'] # Pick is sent from the server
         first_word = inp.split(' ')[0]
         return first_word in valid_commands
 
@@ -661,8 +670,8 @@ class Game(object):
             allowed = 20 + len("username ")
         elif (command == "chat"):
             allowed = 150 + len("chat ")
-        elif (command == "change_canvas"):
-            allowed = 2048 + len("change_canvas ")
+        elif (command == "canvas_change"):
+            allowed = 2048 + len("canvas_change ")
         elif (command == "cast"):
             allowed = 60 + len("cast ")
         #elif self.receiving_message:
@@ -718,7 +727,10 @@ class Game(object):
         # Check if the data isn't empty (means the client disconnected) 
         split_data = data.split(' ') # Should be in the form of: [{command}, sentence]
         if (len(split_data) < 2): return
-        print("[INPUT] Received input from {}({}) : {}".format(str(player.name), player.ip, data))
+        if (len(data) > 40):
+            print("[INPUT] Received long input from {}({})".format(str(player.name), player.ip))
+        else:
+            print("[INPUT] Received input from {}({}) : {}".format(str(player.name), player.ip, data))
 
         # Regex patterns for certain commands
         regex_username      = r"^username [a-z0-9]{1,20}$"
@@ -726,7 +738,14 @@ class Game(object):
         regex_canvas_change = r"^canvas_change (([0-9]{1,3},){2}[a-zA-Z0-9]{6} )+$"
         regex_cast          = r"^cast [a-z]{1,20}$"
         regex_cast_2        = r"^cast [a-z]{1,20} [a-z0-9]{1,20}$"
-        if re.match(regex_username, data) and (not self.start_game and player.name is None):
+        if re.match(regex_username, data):
+            if (self.start_game):
+                print("Player is trying to change username, even though game started")
+                return
+            if (not player.name is None):
+                print("Player trying to change username even though he has one")
+                return
+
             message = split_data[1].strip(" ")
             regex = r"^[a-z0-9]{1,20}$"
             if (not re.match(regex, message)):
@@ -776,18 +795,31 @@ class Game(object):
             
             self.broadcast("chat", "{}: {}".format(player.name, message), serv)
 
-        elif re.match(regex_canvas_change, data + " ") and self.drawer.conn == serv:
+        elif re.match(regex_canvas_change, data + " "):
+            if (not self.started_guessing):
+                print("Trying to change canvas before guessing began")
+                return
+            if (self.drawer.conn != serv):
+                print("Non-drawing player is trying to change the canvas")
+                return
             """
             @message = list of coordinates
 
             Getting a list of coordinates to change + color
             """
-            # change_canvas 250,300,E555D 100,50,E5E5E
+            # canvas_change 250,300,E555D 100,50,E5E5E
             message = split_data[1:] # "250,300,d5d5d5", "100,50,d5d5d5", "70,90,000000"
             self.__paint_coordinates__(serv, message) 
-            
+            for player in self.players:
+		self.send_image(player)
 
-        elif (re.match(regex_cast, data) or re.match(regex_cast_2, data)) and self.drawer.conn != serv:
+        elif (re.match(regex_cast, data) or re.match(regex_cast_2, data)):
+            if (not self.started_guessing):
+                print("Trying to cast spell before guessing began")
+                return
+            if (self.drawer.conn == serv):
+                print("Drawer is trying to cast a spell")
+                return
             regex = "^cast [a-z]{1,20}(?(?= )( [a-z0-9]{1,20}))$"
             ability_name = split_data[1].lower().strip(" ")
             info = ""
@@ -834,8 +866,9 @@ class Game(object):
         @player           = player who painted the pixels
         @coordinate_array = coordinates to paint with color : ["20,100,d5d5d5"]
         """
+        
         # Test coordinate validity
-        regex = r"^(([0-9]{1,3},){2}[a-zA-Z0-9]{6})$"
+        regex = r"^[a-z0-9]{6} ([0-9]{1,3},[0-9]{1,3} )+$"
         # Coordinate array (row,col)
         cords = [] 
         # Color attached with coordinate array(d5d5d5)
@@ -854,17 +887,19 @@ class Game(object):
 
             cords.append(tuple(temp_cords))
             colors.append(split_coordinate[2])
-    
         # turn coordinates to int
         cords = [(int(cord[0]), int(cord[1])) for cord in cords]
         RGBColors = []
         # Change hex color to RGB color
+        """
         for color in colors:
             RGBColors.append((int(color[:2], 16), int(color[2:4], 16),int(color[4:], 16), 255))
+        """
         # Put pixel in image
-        for cord, color in zip(cords, RGBColors):
-            self.img.putpixel(cord, color)
-
+        for i, cord in enumerate(cords[:-1]):
+            next_cord = cords[i+1]        
+            self.draw.line((cord, next_cord), fill="#{}".format(colors[0]), width=1)
+	
 
     def __kick_player__(self, conn, reason):
         """
@@ -914,7 +949,7 @@ class Game(object):
                     return True
         elif conn is not None:
             for player in self.players:
-                if (player.conn is conn):
+                if (player.conn == conn):
                     return True
         return False
 
