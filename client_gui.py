@@ -30,11 +30,21 @@ class Application(object):
         
     def createWidgets(self):
         self.main_frame.pack(fill=BOTH, expand=True)
-        canvas = Canvas(self.main_frame, bg="white", height=800, width=600)
+        canvas = Canvas(self.main_frame, bg="white")
+        chat_canvas = Canvas(canvas, bg = "white", height=600, width=210,scrollregion=(0,0,10000,10000))
+        chat_canvas.place(x=592,y=0)
+        
+        vbar=Scrollbar(canvas,orient=VERTICAL)
+        vbar.place(x=780,y=0)
+        vbar.pack(fill=BOTH, expand = 1)
+        vbar.config(command=chat_canvas.yview)
+        chat_canvas.config(width=210,height=600)
+        chat_canvas.config(yscrollcommand=vbar.set)
+
         j=0
         for i, tool in enumerate(self.tool_box):
             tool_button = Button(canvas, width=31, height=2, bg="black",fg="white",text=tool,command = partial(self.command_color, "white"))
-            tool_button.place(x=225*j+130, y=0)
+            tool_button.place(x=225*j+130, y=2)
             j += 1
             
         j = 0    
@@ -43,23 +53,27 @@ class Application(object):
             color_button.place(x=45*j+130,y=572)
             j+=1
             
-        chat_entry = Entry(canvas, bd =5)
-        chat_entry.place(x=591,y=570)
-        send_button = Button(canvas, bg = "black", fg="white", text="send",height=1,width=8)
-        send_button.place(x=725,y=570)
-
+        self.chat_entry = Entry(chat_canvas, bd =5)
+        self.chat_entry.place(x=1,y=570)
+        self.master.bind('<Return>',self.writing)
+        
+        
         line1 = canvas.create_rectangle(120,0,130,600,fill="black") 
         line2 = canvas.create_rectangle(580,0,590,600,fill="black")
 
         
         canvas.pack(fill=BOTH, expand=1)
-        
     
-    def motion(self,event):
+    """def motion(self,event):
         x, y = event.x, event.y
-        if(x >= 0 and x<=800 and y >= 0 and y<=623):
+        if(x >= 0 and x<=800 and y >= 0 and y<=600):
             client.send_mouse_cor(x,y,self.hexcolor)
-            time.sleep(0.1);
+            time.sleep(0.1);"""
+    def writing(self,event):
+        msg = self.chat_entry.get()
+        print msg
+        self.chat_entry.delete(0, 'end')
+        #client.send_message(msg)
         
     def destroy_master(self):
         self.master.destroy()
@@ -79,7 +93,7 @@ class Application(object):
         self.hexcolor = "FFFFFF"
         self.command_color(self.mouse_color)
         self.createWidgets()
-        self.master.bind('<B1-Motion>',self.motion)
+        #self.master.bind('<B1-Motion>',self.motion)
         self.master.mainloop()
 
 app = Application()
