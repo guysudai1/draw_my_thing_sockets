@@ -73,7 +73,7 @@ class Application(object):
         msg = self.chat_entry.get()
         print msg
         self.chat_entry.delete(0, 'end')
-        #client.send_message(msg)
+        client.send_chat_message(msg)
         
     def destroy_master(self):
         self.master.destroy()
