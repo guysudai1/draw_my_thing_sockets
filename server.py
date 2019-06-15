@@ -868,7 +868,9 @@ class Game(object):
         """
         
         # Test coordinate validity
-        regex = r"^[a-z0-9]{6} ([0-9]{1,3},[0-9]{1,3} )+$"
+        #regex = r"^[a-z0-9]{6} ([0-9]{1,3},[0-9]{1,3} )+$"
+        regex = r"^(([0-9]{1,3},){2}[a-zA-Z0-9]{6})$"
+
         # Coordinate array (row,col)
         cords = [] 
         # Color attached with coordinate array(d5d5d5)
