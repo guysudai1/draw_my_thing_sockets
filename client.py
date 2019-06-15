@@ -39,6 +39,10 @@ class Classy(object):
 			hit = 0
 	return cmd
 
+    def send_chat_message(msg):
+    	new_msg = msg.replace(" ","_")
+    	sock.send("chat "+new_msg+"\n\r")
+	
     def recv_image(self):
         while True:
 	    msg = self.get_command().strip("\n\r")
