@@ -10,10 +10,8 @@ class Classy(object):
         self.sock = socket.socket()
         self.sock.connect(('', 8080))
         self.sock.send("username " + username + "\n\r")
-	t = threading.Thread(target=self.recv_image)
-	t.start()
 
-    def send_mouse_cor(self, cord_list):
+    def send_mouse_cor(self, color, cord_list):
         coordinate_length = 15 # 000,000,000000 <- space
         message_max_length = 2048
         length_of_string = len(cord_list) * coordinate_length - 1
@@ -25,7 +23,8 @@ class Classy(object):
             length_of_string = len(cord_list) * coordinate_length - 1
 
         string_to_send = " ".join(cord_list)
-        self.sock.send("canvas_change {}\n\r".format(string_to_send))
+        self.sock.send("canvas_change {} {}\n\r".format(color, string_to_send))
+    
     def get_command(self):
 	cmd = ""
 	end = "\n\r"
@@ -38,26 +37,28 @@ class Classy(object):
 		else:
 			hit = 0
 	return cmd
-
+    """
     def recv_image(self):
         while True:
 	    msg = self.get_command().strip("\n\r")
-            canvas_change_regex = r"^canvas_change [0-9]{1,5} png [0-9]{1,10}$"
+            regex_canvas_change = r"^canvas_change [a-z0-9]{6} ([0-9]{1,3},[0-9]{1,3} )+$"
             if (re.match(canvas_change_regex, msg)):
-                    msg = msg.split(" ")	
-                    block_count, file_format, block_size = int(msg[1]), msg[2], int(msg[3])
-                    canvas = ""
-		    i = 0
-                    while i < block_count:
-                            cur_msg = self.get_command().strip("\n\r")
-                            if (cur_msg.startswith("IMG ")):
-                                canvas += cur_msg[4:]
-				i += 1
-                    with open("canvas.png", "w") as f:
-                        f.write(canvas)
-                    self.got_image = True
+                    
+                 msg = msg.split(" ")	
+                block_count, file_format, block_size = int(msg[1]), msg[2], int(msg[3])
+                canvas = ""
+                i = 0
+                while i < block_count:
+                        cur_msg = self.get_command().strip("\n\r")
+                        if (cur_msg.startswith("IMG ")):
+                            canvas += cur_msg[4:]
+                            i += 1
+                with open("canvas.png", "w") as f:
+                    f.write(canvas)
+                self.got_image = True
+                
 
-        """
+        
         info = sock.recv(1024)# block_count , file_format, block_size
         sock.send("RECV")
         
@@ -70,5 +71,5 @@ class Classy(object):
         
         with open("canvas" + file_format, "wb") as image:
             image.write(data)
-        """
-
+    
+    """

@@ -44,37 +44,33 @@ class Application(object):
         self.get_color_button = Button(canvas, bg="black", fg="white", text="Choose color", height=1, width=8, command=self.select_color)
         self.get_color_button.place(x=0,y=600-25)
     
-        t = Thread(target=self.get_messages)
+        t = Thread(target=self.get_commands)
         t.start()
         canvas.pack()
 
-    def get_messages(self):
+    def update_image(self):
         while True:
             # TODO : Add canvas thing here with cords(or IN gui)
             message = self.cls.get_command().strip("\n\r")
             split_data = message.split(' ')
             canvas_change_regex = r"^canvas_change [a-z0-9]{6} ([0-9]{1,3},[0-9]{1,3} )+$"
-            print("Message: " + message)
             if re.match(canvas_change_regex, message + " "):
-                print("in here")
                 self.update_image(split_data[1], split_data[2:])
 
     def update_image(self, color, cord_array):
-        cord_array = [tuple(x.split(',')) for x in cord_array]
+        cord_array = [tuple(x.split(',') for x in cord_array]
         tuple_to_int_tuple = lambda x: tuple([int(i) for i in x])
-        cord_array = [tuple_to_int_tuple(x) for x in cord_array]
+        cord_array = tuple_to_int_tuple(cord_array)
         if len(cord_array) == 1:
-            self.image.putpixel(cord_array[0], color)
+            self.draw.putpixel(cord_array[0], color):
         else:
-            for i, cord in enumerate(cord_array[:-1]):
+            for i, cord in enumerate(len(cord_array) - 1):
                 next_cord = cord_array[i+1]
                 self.draw.line((cord, next_cord), fill="#{}".format(color), width=1)
-        self.image.save("canvas.png", "PNG")
-        #time.sleep(0.1)
-        self.img = Image.open("canvas.png")
-        self.img = ImageTk.PhotoImage(self.img)
-        image_sprite = self.image_canvas.create_image(200,200, image=self.img)
-        self.master.update_idletasks()
+        self.i
+        image = Image.open("canvas.png")
+        image = ImageTk.PhotoImage(image)
+        image_sprite = self.image_canvas.create_image(200,200, image=image)
         """ 
         self.color_canvas = Canvas(canvas, bg="white", height=128, width=128)
         self.color_canvas.place(y=600-128, x=0)
@@ -109,21 +105,21 @@ class Application(object):
         self.image_canvas.bind('<B1-Motion>', self.do_painting)
         print(event.x, event.y)
 
-    def get_drawn_pixels(self, color, cord_list):
+    def get_drawn_pixels(self, cord_list):
         if len(cord_list) > 0:
-            self.cls.send_mouse_cor(color, cord_list)
+            self.cls.send_mouse_cor(cord_list)
         
     def do_painting(self, event):
         x, y = event.x, event.y
         #self.image_canvas.create_line((self.lastx, self.lasty, x, y), fill=self.color, width=1)
         if (not self.timer.is_alive()):
             self.drawn_pixels = []
-            self.timer = Timer(0.25, self.get_drawn_pixels, [self.color[1:], self.drawn_pixels])
+            self.timer = Timer(0.25, self.get_drawn_pixels, [self.drawn_pixels])
             self.timer.start()
         #self.draw.line((self.lastx, self.lasty, x, y), fill=self.color, width=1)
         self.lastx, self.lasty = x, y
         if ((x >= 0 and y >= 0) and (x < 400 and y < 400)):
-            self.drawn_pixels.append("{},{}".format(x,y))
+            self.drawn_pixels.append("{},{},{}".format(x,y,self.color[1:]))
 
     def destroy_master(self):
         self.master.destroy()
