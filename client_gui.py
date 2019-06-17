@@ -82,6 +82,7 @@ class Application(object):
         self.master.resizable(0,0)
         
     def __init__(self):
+        self.cls = client.Classy(raw_input("Username: "))
         self.master = Tk()
         self.init_master()
         self.main_frame = Frame(self.master, bg="white")
