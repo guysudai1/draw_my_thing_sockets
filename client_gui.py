@@ -69,11 +69,11 @@ class Application(object):
         if(x >= 0 and x<=800 and y >= 0 and y<=600):
             client.send_mouse_cor(x,y,self.hexcolor)
             time.sleep(0.1);"""
-    def writing(self,event):
+    def send_message(self,event):
         msg = self.chat_entry.get()
-        print msg
-        self.chat_entry.delete(0, 'end')
         client.send_chat_message(msg)
+        self.chat_entry.delete(0, 'end')
+        
         
     def destroy_master(self):
         self.master.destroy()
