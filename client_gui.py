@@ -33,13 +33,6 @@ class Application(object):
         canvas = Canvas(self.main_frame, bg="white")
         chat_canvas = Canvas(canvas, bg = "white", height=600, width=210,scrollregion=(0,0,10000,10000))
         chat_canvas.place(x=592,y=0)
-        
-        vbar=Scrollbar(canvas,orient=VERTICAL)
-        vbar.place(x=780,y=0)
-        vbar.pack(fill=BOTH, expand = 1)
-        vbar.config(command=chat_canvas.yview)
-        chat_canvas.config(width=210,height=600)
-        chat_canvas.config(yscrollcommand=vbar.set)
 
         j=0
         for i, tool in enumerate(self.tool_box):
@@ -64,16 +57,21 @@ class Application(object):
         
         canvas.pack(fill=BOTH, expand=1)
     
-    """def motion(self,event):
-        x, y = event.x, event.y
-        if(x >= 0 and x<=800 and y >= 0 and y<=600):
-            client.send_mouse_cor(x,y,self.hexcolor)
-            time.sleep(0.1);"""
     def send_message(self,event):
         msg = self.chat_entry.get()
         client.send_chat_message(msg)
         self.chat_entry.delete(0, 'end')
         
+    def writing_chat(self):
+        msg = self.cls.get_command().strip("\n\r")
+        new_msg = msg.replace("_"," ")
+        for i in range(4):
+            is_chat += new_msg[i]
+
+        if(is_chat == "chat"):    
+            self.chat_text.config(state=NORMAL)
+            self.chat_text.insert(END,new_msg+"\n")
+            self.chat_text.config(state=DISABLED)
         
     def destroy_master(self):
         self.master.destroy()
@@ -93,6 +91,7 @@ class Application(object):
         self.hexcolor = "FFFFFF"
         self.command_color(self.mouse_color)
         self.createWidgets()
+        self.writing_chat()
         #self.master.bind('<B1-Motion>',self.motion)
         self.master.mainloop()
 
