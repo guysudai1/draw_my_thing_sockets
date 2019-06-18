@@ -42,6 +42,16 @@ class Application(object):
         self.chat_entry.place(x=1,y=570)
         self.master.bind('<Return>',self.send_message)
        
+
+        self.ability_canvas = Canvas(self.canvas, bg="white", height=100, width=400)
+        self.ability_canvas.place(x=160, y=450)
+        
+        self.word_canvas = Canvas(self.canvas, bg="white", height=50, width=400)
+        self.word_canvas.place(x=159, y=450+100)
+        self.word = Text(self.word_canvas, height=50, width= 400, bg="white", fg="black", font=('Arial', 20))
+        self.word.place(x=0,y=0)
+        self.word.config(state=DISABLED)
+
         line1 = self.canvas.create_rectangle(150,0,160,600,fill="black") 
         line2 = self.canvas.create_rectangle(560,0,570,600,fill="black")
 
@@ -73,8 +83,9 @@ class Application(object):
             message = self.cls.get_command().strip("\n\r")
             split_data = message.split(' ')
             canvas_change_regex = r"^canvas_change [a-z0-9]{6} ([0-9]{1,3},[0-9]{1,3} )+$"
-	    chat_regex 			 = r"^chat [a-z0-9.,?:_]{1,150}$"
+	    chat_regex 			 = r"^chat [a-zA-Z0-9.,?:_]{1,150}$"
 	    get_players			 = r"^getplayers ([a-z0-9]{1,20},[0-9]{1,10} )+$"
+            word_regex                   = r"^word ([0-9]{1,2}_)+$"
             print("Message: " + message)
             if re.match(canvas_change_regex, message + " "):
                 self.update_image(split_data[1], split_data[2:])
@@ -91,6 +102,18 @@ class Application(object):
         		split_player_score = player_score.split(',')
 	        	self.board_text.insert(END,split_player_score[0] + ": " +  split_player_score[1] + "\n")
 		self.board_text.config(state=DISABLED)
+            elif re.match(word_regex, message + "_"):
+                message = message.split(" ")[1]
+                word = ""
+                for i in message.split("_"):
+                    word += int(i) * "_ "
+                    word += " "
+                print("WORD: " + word)
+                self.word.config(state=NORMAL)
+                self.word.delete(1.0, END)
+                self.word.insert(END, "WORD: " + word)
+                self.word.config(state=DISABLED)
+
 
     def update_image(self, color, cord_array):
         cord_array = [tuple(x.split(',')) for x in cord_array]
@@ -102,7 +125,7 @@ class Application(object):
             for i, cord in enumerate(cord_array[:-1]):
                 next_cord = cord_array[i+1]
                 self.draw.line((cord, next_cord), fill="#{}".format(color), width=1)
-        self.image.save("self.canvas.png", "PNG")
+        self.image.save("canvas.png", "PNG")
         #time.sleep(0.1)
         self.img = Image.open("canvas.png")
         self.img = ImageTk.PhotoImage(self.img)

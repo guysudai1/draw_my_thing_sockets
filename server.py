@@ -370,7 +370,7 @@ class Game(object):
             string_lengths = []
             for word in self.drawer_word.split(" "):
                 string_lengths.append(str(len(word)))
-            self.broadcast("word", " ".join(string_lengths))
+            self.broadcast("word", "_".join(string_lengths))
 
             # Looping until 1. Word gets guessed || 2. 60 Seconds have passed.
             while self.started_guessing and not self.drawer_disconnected:
@@ -423,7 +423,7 @@ class Game(object):
             if (not self.drawer in self.players): return
             # Let the drawer know he has 30 seconds and send him the list of words.
             self.drawer.conn.send("chat You_have_30_seconds_to_pick_a_word\n\r")
-            self.drawer.conn.send("pick " + '_'.join(self.drawer_word) + "\n\r")   
+            self.drawer.conn.send("chat Pick:_" + '_'.join(self.drawer_word) + "\n\r")   
             cur_time = time.time()
             
             # Loop until 1. The drawer picks a word || 2. 30 Seconds have been passed.
