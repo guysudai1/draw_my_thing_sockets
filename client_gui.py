@@ -6,17 +6,28 @@ from functools import partial
 from threading import Timer, Thread
 import client
 import time
-ImageFile.LOAD_TRUNCATED_IMAGES = True
         
 class Application(object):
     def createWidgets(self):
         self.main_frame.pack(fill=BOTH, expand=True)
-        canvas = Canvas(self.main_frame, bg="white", height=600, width=800)
+        self.canvas = Canvas(self.main_frame, bg="white", height=600, width=800)
         for i, tool in enumerate(self.tool_box):
-            tool_button = Button(canvas, width=15, height=2, bg="black",fg="white",text=tool)
+            tool_button = Button(self.canvas, width=15, height=2, bg="black",fg="white",text=tool)
             tool_button.place(x=225*i+130, y=0)
+        
+	self.chat_canvas = Canvas(self.canvas, bg = "white", height=600, width=210,scrollregion=(0,0,10000,10000))
+        self.chat_canvas.place(x=592,y=0)
+        self.board_canvas = Canvas(self.canvas, bg = "white", height=600, width=116,scrollregion=(0,0,10000,10000))
+        self.board_canvas.place(x=0,y=0)
             
-            
+	self.chat_text = Text(self.chat_canvas, height=35, width=25,bg="white",fg="black")
+        self.chat_text.place(x=1,y=0)
+        self.chat_text.config(state=DISABLED)
+	
+	self.board_text = Text(self.board_canvas, height=40, width=14,bg="white",fg="black")
+        self.board_text.place(x=1,y=0)
+        self.board_text.insert(END,"LEADERBOARD:\n\n")
+        self.board_text.config(state=DISABLED)
         """
         j = 0    
         for i, color in enumerate(self.colors):
@@ -24,40 +35,62 @@ class Application(object):
             color_button.place(x=45*j+130,y=522)
             j+=1
         """
-        chat_entry = Entry(canvas, bd=5)
-        chat_entry.place(x=591,y=570)
-        send_button = Button(canvas, bg = "black", fg="white", text="send",height=1,width=8)
-        send_button.place(x=725,y=570)
+        self.send_button = Button(self.canvas, bg = "black", fg="white", text="send",height=1,width=8)
+        self.send_button.place(x=725,y=570)
         
+	self.chat_entry = Entry(self.chat_canvas, bd =5)
+        self.chat_entry.place(x=1,y=570)
+        self.master.bind('<Return>',self.send_message)
        
-        line1 = canvas.create_rectangle(150,0,160,600,fill="black") 
-        line2 = canvas.create_rectangle(560,0,570,600,fill="black")
+        line1 = self.canvas.create_rectangle(150,0,160,600,fill="black") 
+        line2 = self.canvas.create_rectangle(560,0,570,600,fill="black")
 
 
-        self.image_canvas = Canvas(canvas, bg="white", height=400, width=400)
+        self.image_canvas = Canvas(self.canvas, bg="white", height=400, width=400)
         self.image_canvas.place(x=160, y=50)
         self.image        = Image.new("RGB", (400,400), 'white')
         self.draw    = ImageDraw.Draw(self.image)
         self.lastx = self.lasty = None
         self.image_canvas.bind('<1>', self.paint_image)
     
-        self.get_color_button = Button(canvas, bg="black", fg="white", text="Choose color", height=1, width=8, command=self.select_color)
+        self.get_color_button = Button(self.canvas, bg="black", fg="white", text="Choose color", height=1, width=8, command=self.select_color)
         self.get_color_button.place(x=0,y=600-25)
     
         t = Thread(target=self.get_messages)
         t.start()
-        canvas.pack()
 
+        self.canvas.pack()
+
+
+    def send_message(self, event):
+        msg = self.chat_entry.get()
+        self.cls.send_chat_message(msg)
+        self.chat_entry.delete(0, 'end')
+    
     def get_messages(self):
         while True:
             # TODO : Add canvas thing here with cords(or IN gui)
             message = self.cls.get_command().strip("\n\r")
             split_data = message.split(' ')
             canvas_change_regex = r"^canvas_change [a-z0-9]{6} ([0-9]{1,3},[0-9]{1,3} )+$"
+	    chat_regex 			 = r"^chat [a-z0-9.,?:_]{1,150}$"
+	    get_players			 = r"^getplayers ([a-z0-9]{1,20},[0-9]{1,10} )+$"
             print("Message: " + message)
             if re.match(canvas_change_regex, message + " "):
-                print("in here")
                 self.update_image(split_data[1], split_data[2:])
+	    elif re.match(chat_regex, message):
+		message = message.replace("_", " ")
+		self.chat_text.config(state=NORMAL)
+                self.chat_text.insert(END, message[5:] + "\n")
+            	self.chat_text.config(state=DISABLED)
+
+    	    elif re.match(get_players, message + " "):
+ 		self.board_text.config(state=NORMAL)
+	    	split_msg = message.split(" ")[1:]
+    		for player_score in split_msg:
+        		split_player_score = player_score.split(',')
+	        	self.board_text.insert(END,split_player_score[0] + ": " +  split_player_score[1] + "\n")
+		self.board_text.config(state=DISABLED)
 
     def update_image(self, color, cord_array):
         cord_array = [tuple(x.split(',')) for x in cord_array]
@@ -69,7 +102,7 @@ class Application(object):
             for i, cord in enumerate(cord_array[:-1]):
                 next_cord = cord_array[i+1]
                 self.draw.line((cord, next_cord), fill="#{}".format(color), width=1)
-        self.image.save("canvas.png", "PNG")
+        self.image.save("self.canvas.png", "PNG")
         #time.sleep(0.1)
         self.img = Image.open("canvas.png")
         self.img = ImageTk.PhotoImage(self.img)

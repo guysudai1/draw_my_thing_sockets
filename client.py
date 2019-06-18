@@ -25,6 +25,10 @@ class Classy(object):
         string_to_send = " ".join(cord_list)
         self.sock.send("canvas_change {} {}\n\r".format(color, string_to_send))
     
+    def send_chat_message(self, msg):
+    	new_msg = msg.replace(" ","_")
+    	self.sock.send("chat "+new_msg + "\n\r")
+
     def get_command(self):
 	cmd = ""
 	end = "\n\r"

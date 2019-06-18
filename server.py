@@ -688,6 +688,7 @@ class Game(object):
             peek_data = sock.recv(allowed, socket.MSG_PEEK)
             if end not in peek_data:
                 self.__kick_player__(sock, "sending more than character limit or not having \\n\\r at the end of the line.")
+                print("KICKING")
                 return None
 
             while (hit < len(end)):
@@ -742,7 +743,7 @@ class Game(object):
 
             # Regex patterns for certain commands
             regex_username      = r"^username [a-z0-9]{1,20}$"
-            regex_chat          = r"^chat [a-zA-Z0-9 ,.]{1,150}$"
+            regex_chat          = r"^chat [a-zA-Z0-9_,.?'!]{1,150}$"
             regex_canvas_change = r"^canvas_change [a-z0-9]{6} ([0-9]{1,3},[0-9]{1,3} )+$"
             regex_cast          = r"^cast [a-z]{1,20}$"
             regex_cast_2        = r"^cast [a-z]{1,20} [a-z0-9]{1,20}$"
@@ -769,10 +770,11 @@ class Game(object):
                 player.name = message
                         
             elif re.match(regex_chat, data):
-                message = " ".join(split_data[1:]).strip(" ")
-                regex = r"^[a-zA-Z0-9 ,.]{1,150}$"
+                message = split_data[1]
+                message = " ".join(message.split("_")).strip(" ")
+                regex = r"^[a-zA-Z0-9 ,.?'!]{1,150}$"
                 if (not re.match(regex, message)):
-                    self.send_message(serv, "chat", "Your message needs to be only alphabetical characters. Please send another one.")
+                    self.send_message(serv, "chat", "Your message has invalid characters.")
                     return
 
                 if not self.start_game:
@@ -907,7 +909,7 @@ class Game(object):
 		for i, cord in enumerate(cords[:-1]):
 		    next_cord = cords[i+1]        
 		    self.draw.line((cord, next_cord), fill="#{}".format(color), width=1)
-                self.img.show() 
+                #self.img.show() 
 		for cur_player in self.players:
 		    if cur_player.has_state("blind"):
 		            Timer(cur_player.time_unblind - time.time(), self.send_message, [cur_player.conn, "canvas_change", "{} {}".format(color, " ".join(coordinate_array)), False])
