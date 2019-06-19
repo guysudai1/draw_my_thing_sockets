@@ -10,21 +10,21 @@ import time
 class Application(object):
     def createWidgets(self):
         self.main_frame.pack(fill=BOTH, expand=True)
-        self.canvas = Canvas(self.main_frame, bg="white", height=600, width=800)
-        for i, tool in enumerate(self.tool_box):
-            tool_button = Button(self.canvas, width=15, height=2, bg="black",fg="white",text=tool)
-            tool_button.place(x=225*i+130, y=0)
+        self.canvas = Canvas(self.main_frame, bg="white", height=600, width=900)
+        #for i, tool in enumerate(self.tool_box):
+        #    tool_button = Button(self.canvas, width=15, height=2, bg="black",fg="white",text=tool)
+        #    tool_button.place(x=225*i+130, y=0)
         
-	self.chat_canvas = Canvas(self.canvas, bg = "white", height=600, width=210,scrollregion=(0,0,10000,10000))
-        self.chat_canvas.place(x=592,y=0)
-        self.board_canvas = Canvas(self.canvas, bg = "white", height=600, width=116,scrollregion=(0,0,10000,10000))
+	self.chat_canvas = Canvas(self.canvas, bg = "white", height=600, width=330,scrollregion=(0,0,10000,10000))
+        self.chat_canvas.place(x=570,y=0)
+        self.board_canvas = Canvas(self.canvas, bg = "white", height=600, width=150,scrollregion=(0,0,10000,10000))
         self.board_canvas.place(x=0,y=0)
             
-	self.chat_text = Text(self.chat_canvas, height=35, width=25,bg="white",fg="black")
-        self.chat_text.place(x=1,y=0)
+	self.chat_text = Text(self.chat_canvas, height=33, width=39,bg="white",fg="black")
+        self.chat_text.place(x=7,y=0)
         self.chat_text.config(state=DISABLED)
 	
-	self.board_text = Text(self.board_canvas, height=40, width=14,bg="white",fg="black")
+	self.board_text = Text(self.board_canvas, height=40, width=20,bg="white",fg="black")
         self.board_text.place(x=1,y=0)
         self.board_text.insert(END,"LEADERBOARD:\n\n")
         self.board_text.config(state=DISABLED)
@@ -35,11 +35,11 @@ class Application(object):
             color_button.place(x=45*j+130,y=522)
             j+=1
         """
-        self.send_button = Button(self.canvas, bg = "black", fg="white", text="send",height=1,width=8)
-        self.send_button.place(x=725,y=570)
+        #self.send_button = Button(self.canvas, bg = "black", fg="white", text="send",height=1,width=8)
+        #self.send_button.place(x=725,y=570)
         
-	self.chat_entry = Entry(self.chat_canvas, bd =5)
-        self.chat_entry.place(x=1,y=570)
+        self.chat_entry = Entry(self.chat_canvas, bd=4, width=38)
+        self.chat_entry.place(x=6,y=570)
         self.master.bind('<Return>',self.send_message)
        
 
@@ -63,8 +63,8 @@ class Application(object):
         self.lastx = self.lasty = None
         self.image_canvas.bind('<1>', self.paint_image)
     
-        self.get_color_button = Button(self.canvas, bg="black", fg="white", text="Choose color", height=1, width=8, command=self.select_color)
-        self.get_color_button.place(x=0,y=600-25)
+        self.get_color_button = Button(self.canvas, bg="black", fg="white", text="Choose color", height=3, width=15, command=self.select_color)
+        self.get_color_button.place(x=0,y=600-66)
     
         t = Thread(target=self.get_messages)
         t.start()
@@ -86,7 +86,7 @@ class Application(object):
 	    chat_regex 			 = r"^chat [a-zA-Z0-9.,?:_]{1,150}$"
 	    get_players			 = r"^getplayers ([a-z0-9]{1,20},[0-9]{1,10} )+$"
             word_regex                   = r"^word ([0-9]{1,2}_)+$"
-            print("Message: " + message)
+            #print("Message: " + message)
             if re.match(canvas_change_regex, message + " "):
                 self.update_image(split_data[1], split_data[2:])
 	    elif re.match(chat_regex, message):
@@ -94,11 +94,14 @@ class Application(object):
 		self.chat_text.config(state=NORMAL)
                 self.chat_text.insert(END, message[5:] + "\n")
             	self.chat_text.config(state=DISABLED)
+                self.chat_canvas.yview_moveto(1.0)
 
     	    elif re.match(get_players, message + " "):
  		self.board_text.config(state=NORMAL)
 	    	split_msg = message.split(" ")[1:]
-    		for player_score in split_msg:
+    		self.board_text.delete(1.0, END)
+                self.board_text.insert(END, "LEADERBOARD:\n\n")
+                for player_score in split_msg:
         		split_player_score = player_score.split(',')
 	        	self.board_text.insert(END,split_player_score[0] + ": " +  split_player_score[1] + "\n")
 		self.board_text.config(state=DISABLED)
@@ -108,7 +111,7 @@ class Application(object):
                 for i in message.split("_"):
                     word += int(i) * "_ "
                     word += " "
-                print("WORD: " + word)
+                #print("WORD: " + word)
                 self.word.config(state=NORMAL)
                 self.word.delete(1.0, END)
                 self.word.insert(END, "WORD: " + word)
@@ -120,11 +123,10 @@ class Application(object):
         tuple_to_int_tuple = lambda x: tuple([int(i) for i in x])
         cord_array = [tuple_to_int_tuple(x) for x in cord_array]
         if len(cord_array) == 1:
-            self.image.putpixel(cord_array[0], color)
-        else:
-            for i, cord in enumerate(cord_array[:-1]):
-                next_cord = cord_array[i+1]
-                self.draw.line((cord, next_cord), fill="#{}".format(color), width=1)
+            return
+        for i, cord in enumerate(cord_array[:-1]):
+            next_cord = cord_array[i+1]
+            self.draw.line((cord, next_cord), fill="#{}".format(color), width=1)
         self.image.save("canvas.png", "PNG")
         #time.sleep(0.1)
         self.img = Image.open("canvas.png")
@@ -163,7 +165,7 @@ class Application(object):
     def paint_image(self, event):
         self.lastx, self.lasty = event.x, event.y
         self.image_canvas.bind('<B1-Motion>', self.do_painting)
-        print(event.x, event.y)
+        #print(event.x, event.y)
 
     def get_drawn_pixels(self, color, cord_list):
         if len(cord_list) > 0:
@@ -174,7 +176,7 @@ class Application(object):
         #self.image_canvas.create_line((self.lastx, self.lasty, x, y), fill=self.color, width=1)
         if (not self.timer.is_alive()):
             self.drawn_pixels = []
-            self.timer = Timer(0.25, self.get_drawn_pixels, [self.color[1:], self.drawn_pixels])
+            self.timer = Timer(self.time_refresh, self.get_drawn_pixels, [self.color[1:], self.drawn_pixels])
             self.timer.start()
         #self.draw.line((self.lastx, self.lasty, x, y), fill=self.color, width=1)
         self.lastx, self.lasty = x, y
@@ -187,11 +189,11 @@ class Application(object):
     def select_color(self):
         color = askcolor()
         self.color = color[1]
-        print(self.color)
+        
 
     def init_master(self):
         self.master.title('Draw My Thing v1')
-        self.master.geometry("800x600")
+        self.master.geometry("900x600")
         self.master.resizable(0,0)
         
     def __init__(self):
@@ -201,8 +203,9 @@ class Application(object):
         self.main_frame = Frame(self.master, bg="white")
         self.tool_box = ["pen", "eraser"]
         self.drawn_pixels = []
+        self.time_refresh = 0.15
         self.color = "#000000" # BLACK
-        self.timer = Timer(0.25, self.get_drawn_pixels, [self.drawn_pixels])
+        self.timer = Timer(self.time_refresh, self.get_drawn_pixels, [self.drawn_pixels])
         self.createWidgets()
         #self.master.bind('<B1-Motion>',self.motion)
         self.master.mainloop()

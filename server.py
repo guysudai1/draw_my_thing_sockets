@@ -415,6 +415,7 @@ class Game(object):
                 else:
                     self.send_message(player.conn, "chat", "You have received 1 point for correctly guessing the word!")
                     player.score += 1
+            self.send_players()
 
         def pick_word(self):
             """
@@ -456,6 +457,7 @@ class Game(object):
             """
             Main game loop
             """
+            self.send_players()
             for rnd in range(1, self.max_rounds + 1):
                 print("===========================")
                 print("          ROUND {}         ".format(rnd))
@@ -552,6 +554,12 @@ class Game(object):
             """
             self.players = sorted(self.players, key=lambda x: x.score)
         
+        def send_players(self):
+            players_score = ""
+            for player in self.players:
+                players_score += "{},{} ".format(player.name, player.score)
+            self.broadcast("getplayers", players_score[:-1], None, False)
+
         """
         def receive_image(self):
             
@@ -634,14 +642,15 @@ class Game(object):
                 conn.send("Already connected from this IP...")
                 conn.close()
 
-        def broadcast(self, command, msg, fromSocket=None):
+        def broadcast(self, command, msg, fromSocket=None, removeSpaces=True):
             """
             @msg        = the message to broadcast
             @fromSocket = the socket not to send the message to
 
             Broadcasts a message to every socket except fromSocket
             """
-            msg = "_".join(msg.split(' '))
+            if removeSpaces:
+                msg = "_".join(msg.split(' '))
             for player in self.players:
                 conn = player.conn
                 if conn is not fromSocket:
@@ -737,7 +746,8 @@ class Game(object):
             split_data = data.split(' ') # Should be in the form of: [{command}, sentence]
             if (len(split_data) < 2): return
             if (len(data) > 40):
-                print("[INPUT] Received long input from {}({})".format(str(player.name), player.ip))
+                pass
+                #print("[INPUT] Received long input from {}({})".format(str(player.name), player.ip))
             else:
                 print("[INPUT] Received input from {}({}) : {}".format(str(player.name), player.ip, data))
 
@@ -747,6 +757,7 @@ class Game(object):
             regex_canvas_change = r"^canvas_change [a-z0-9]{6} ([0-9]{1,3},[0-9]{1,3} )+$"
             regex_cast          = r"^cast [a-z]{1,20}$"
             regex_cast_2        = r"^cast [a-z]{1,20} [a-z0-9]{1,20}$"
+            
             if re.match(regex_username, data):
                 if (self.start_game):
                     print("Player is trying to change username, even though game started")
@@ -797,6 +808,7 @@ class Game(object):
                     """
                     self.broadcast("chat", "{}({}) has guessed the correct word!".format(player.name, player.ip))
                     self.guessed.append(player)
+                   
                     return
 
                 elif self.started_guessing and player.conn == self.drawer.conn:
@@ -869,7 +881,7 @@ class Game(object):
                     self.canvas += data
                     self.receiving_image = self.receiving_times != 0
            """
-
+        
         def __paint_coordinates__(self, player, coordinate_array, color):
 		"""
 		Paints coordinates given.
