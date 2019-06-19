@@ -23,6 +23,15 @@ class Application(object):
         self.board_text.insert(END,"LEADER BOARD:\n\n")
         self.board_text.config(state=DISABLED)
         
+        self.button_blindt = Button(canvas,bg="black",fg="white",text="Blind team",width = 15, command = partial(client.send_ability,"Blindteam"))
+        self.button_blindt.place(x=200,y=550)
+        
+        self.button_blindp = Button(canvas,bg="black",fg="white",text="Blind person",width = 15, command = partial(client.send_ability,"Blindperson"))
+        self.button_blindp.place(x=330,y=550)
+        
+        self.button_getl = Button(canvas,bg="black",fg="white",text="Get letter",width = 15, command = partial(client.send_ability,"Getletter"))
+        self.button_getl.place(x=460,y=550)
+        
         j=0
         for i, tool in enumerate(self.tool_box):
             tool_button = Button(canvas, width=31, height=2, bg="black",fg="white",text=tool,command = partial(self.command_color, "white"))
