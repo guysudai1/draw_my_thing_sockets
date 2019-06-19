@@ -335,7 +335,7 @@ class Game(object):
             self.started_guessing = False
             self.drawer_disconnected = False
             self.drawer_word = next(self.words)
-            self.reset_board()
+            self.broadcast("resetboard", "")
             
 
             # Get all player connections )
@@ -444,14 +444,7 @@ class Game(object):
             else:
                 # In case the drawer picked a word
                 print("[GAME] {}({}) has picked a word! {}".format(self.drawer.name, self.drawer.ip, self.drawer_word))
-        
-        def reset_board(self):
-            """
-            Resets each client's board and sends a white board.
-            """
-            for client in self.players:
-                self.img = Image.new("RGB", (400,400), "white")
-                #self.send_image(client)
+
                 
         def game_loop(self):
             """
@@ -465,7 +458,6 @@ class Game(object):
                 self.drawers = [player for player in self.players]
                 while len(self.drawers) != 0:
                     self.execute_round(rnd)
-                    self.reset_board()
                     print("---------------------------")
 
             # Get final results.
@@ -654,8 +646,10 @@ class Game(object):
             for player in self.players:
                 conn = player.conn
                 if conn is not fromSocket:
-                    conn.send("{} {}\n\r".format(command, msg))
-
+                    if msg != "":
+                        conn.send("{} {}\n\r".format(command, msg))
+                    else:
+                        conn.send("{}\n\r".format(command))
         def is_valid(self, inp):
             """
             @inp = input to be validated
@@ -754,7 +748,7 @@ class Game(object):
             # Regex patterns for certain commands
             regex_username      = r"^username [a-z0-9]{1,20}$"
             regex_chat          = r"^chat [a-zA-Z0-9_,.?'!]{1,150}$"
-            regex_canvas_change = r"^canvas_change [a-z0-9]{6} ([0-9]{1,3},[0-9]{1,3} )+$"
+            regex_canvas_change = r"^canvas_change [a-z0-9]{6} [0-9]{1,2} ([0-9]{1,3},[0-9]{1,3} )+$"
             regex_cast          = r"^cast [a-z]{1,20}$"
             regex_cast_2        = r"^cast [a-z]{1,20} [a-z0-9]{1,20}$"
             
@@ -830,9 +824,10 @@ class Game(object):
                 Getting a list of coordinates to change + color
                 """
                 # canvas_change 250,300,E555D 100,50,E5E5E
-                message = split_data[2:] # "250,300", "100,50", "70,90"
+                message = split_data[3:] # "250,300", "100,50", "70,90"
                 color   = split_data[1]
-                self.__paint_coordinates__(serv, message, color) 
+                width   = int(split_data[2])
+                self.__paint_coordinates__(serv, message, color, width) 
                 #for player in self.players:
                     #self.send_image(player)
 
@@ -882,7 +877,7 @@ class Game(object):
                     self.receiving_image = self.receiving_times != 0
            """
         
-        def __paint_coordinates__(self, player, coordinate_array, color):
+        def __paint_coordinates__(self, player, coordinate_array, color, width):
 		"""
 		Paints coordinates given.
 
@@ -920,14 +915,14 @@ class Game(object):
 		# Put pixel in image
 		for i, cord in enumerate(cords[:-1]):
 		    next_cord = cords[i+1]        
-		    self.draw.line((cord, next_cord), fill="#{}".format(color), width=1)
+		    self.draw.line((cord, next_cord), fill="#{}".format(color), width=width)
                 #self.img.show() 
 		for cur_player in self.players:
 		    if cur_player.has_state("blind"):
-		            Timer(cur_player.time_unblind - time.time(), self.send_message, [cur_player.conn, "canvas_change", "{} {}".format(color, " ".join(coordinate_array)), False])
+		            Timer(cur_player.time_unblind - time.time(), self.send_message, [cur_player.conn, "canvas_change", "{} {} {}".format(color, str(width), " ".join(coordinate_array)), False])
 		    else:
-		        self.send_message(cur_player.conn, "canvas_change", "{} {}".format(color, " ".join(coordinate_array)), False)
-
+		        self.send_message(cur_player.conn, "canvas_change", "{} {} {}".format(color, str(width), " ".join(coordinate_array)), False)
+ 
         def __kick_player__(self, conn, reason):
             """
             This function kicks out / disconnects a player.

@@ -14,7 +14,10 @@ class Application(object):
         #for i, tool in enumerate(self.tool_box):
         #    tool_button = Button(self.canvas, width=15, height=2, bg="black",fg="white",text=tool)
         #    tool_button.place(x=225*i+130, y=0)
-        
+        pen_tool = Button(self.canvas, width=22, height=2, bg="black", fg="white", text="PEN", command=partial(self.replace_tool, "pen"))
+        pen_tool.place(x=160, y=0)
+        eraser_tool = Button(self.canvas, width=22, height=2, bg="black", fg="white", text="ERASER", command=partial(self.replace_tool, "eraser"))
+        eraser_tool.place(x=355, y=0)
 	self.chat_canvas = Canvas(self.canvas, bg = "white", height=600, width=330,scrollregion=(0,0,10000,10000))
         self.chat_canvas.place(x=570,y=0)
         self.board_canvas = Canvas(self.canvas, bg = "white", height=600, width=150,scrollregion=(0,0,10000,10000))
@@ -64,37 +67,45 @@ class Application(object):
         self.image_canvas.bind('<1>', self.paint_image)
     
         self.get_color_button = Button(self.canvas, bg="black", fg="white", text="Choose color", height=3, width=15, command=self.select_color)
-        self.get_color_button.place(x=0,y=600-66)
+        self.get_color_button.place(x=3,y=600-66)
     
         t = Thread(target=self.get_messages)
         t.start()
 
         self.canvas.pack()
 
+    def replace_tool(self, tool):
+        if (tool == "pen"):
+            self.eraser = False
+        if (tool == "eraser"):
+            self.eraser = True
+        return
 
     def send_message(self, event):
         msg = self.chat_entry.get()
         self.cls.send_chat_message(msg)
-        self.chat_entry.delete(0, 'end')
-    
+        self.chat_entry.delete(0, 'end') 
+        self.chat_text.config(state=NORMAL)
+        self.chat_text.insert(END, "You: " + msg + "\n")
+        self.chat_text.config(state=DISABLED)
+
     def get_messages(self):
         while True:
             # TODO : Add canvas thing here with cords(or IN gui)
             message = self.cls.get_command().strip("\n\r")
             split_data = message.split(' ')
-            canvas_change_regex = r"^canvas_change [a-z0-9]{6} ([0-9]{1,3},[0-9]{1,3} )+$"
+            canvas_change_regex = r"^canvas_change [a-z0-9]{6} [0-9]{1,2} ([0-9]{1,3},[0-9]{1,3} )+$"
 	    chat_regex 			 = r"^chat [a-zA-Z0-9.,?:_]{1,150}$"
 	    get_players			 = r"^getplayers ([a-z0-9]{1,20},[0-9]{1,10} )+$"
             word_regex                   = r"^word ([0-9]{1,2}_)+$"
             #print("Message: " + message)
             if re.match(canvas_change_regex, message + " "):
-                self.update_image(split_data[1], split_data[2:])
+                self.update_image(split_data[1], int(split_data[2]), split_data[3:])
 	    elif re.match(chat_regex, message):
 		message = message.replace("_", " ")
 		self.chat_text.config(state=NORMAL)
                 self.chat_text.insert(END, message[5:] + "\n")
             	self.chat_text.config(state=DISABLED)
-                self.chat_canvas.yview_moveto(1.0)
 
     	    elif re.match(get_players, message + " "):
  		self.board_text.config(state=NORMAL)
@@ -116,9 +127,16 @@ class Application(object):
                 self.word.delete(1.0, END)
                 self.word.insert(END, "WORD: " + word)
                 self.word.config(state=DISABLED)
+            elif (message == "resetboard"):
+                self.img = Image.new("RGB", (400,400), "white")
+                self.img.save("canvas.png")
+                self.img = Image.open("canvas.png")
+                self.img = ImageTk.PhotoImage(self.img)
+                image_sprite = self.image_canvas.create_image(200,200, image=self.img)
+                self.master.update_idletasks()
 
 
-    def update_image(self, color, cord_array):
+    def update_image(self, color, width, cord_array):
         cord_array = [tuple(x.split(',')) for x in cord_array]
         tuple_to_int_tuple = lambda x: tuple([int(i) for i in x])
         cord_array = [tuple_to_int_tuple(x) for x in cord_array]
@@ -126,7 +144,7 @@ class Application(object):
             return
         for i, cord in enumerate(cord_array[:-1]):
             next_cord = cord_array[i+1]
-            self.draw.line((cord, next_cord), fill="#{}".format(color), width=1)
+            self.draw.line((cord, next_cord), fill="#{}".format(color), width=width)
         self.image.save("canvas.png", "PNG")
         #time.sleep(0.1)
         self.img = Image.open("canvas.png")
@@ -167,16 +185,19 @@ class Application(object):
         self.image_canvas.bind('<B1-Motion>', self.do_painting)
         #print(event.x, event.y)
 
-    def get_drawn_pixels(self, color, cord_list):
+    def get_drawn_pixels(self, color, cord_list, width=1):
         if len(cord_list) > 0:
-            self.cls.send_mouse_cor(color, cord_list)
+            self.cls.send_mouse_cor(color, cord_list, width)
         
     def do_painting(self, event):
         x, y = event.x, event.y
         #self.image_canvas.create_line((self.lastx, self.lasty, x, y), fill=self.color, width=1)
         if (not self.timer.is_alive()):
             self.drawn_pixels = []
-            self.timer = Timer(self.time_refresh, self.get_drawn_pixels, [self.color[1:], self.drawn_pixels])
+            if self.eraser == True:
+                self.timer = Timer(self.time_refresh, self.get_drawn_pixels, ["ffffff", self.drawn_pixels, 20])
+            else:
+                self.timer = Timer(self.time_refresh, self.get_drawn_pixels, [self.color[1:], self.drawn_pixels, 2])
             self.timer.start()
         #self.draw.line((self.lastx, self.lasty, x, y), fill=self.color, width=1)
         self.lastx, self.lasty = x, y
@@ -204,6 +225,7 @@ class Application(object):
         self.tool_box = ["pen", "eraser"]
         self.drawn_pixels = []
         self.time_refresh = 0.15
+        self.eraser = False
         self.color = "#000000" # BLACK
         self.timer = Timer(self.time_refresh, self.get_drawn_pixels, [self.drawn_pixels])
         self.createWidgets()

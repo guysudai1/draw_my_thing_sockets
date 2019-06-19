@@ -11,19 +11,19 @@ class Classy(object):
         self.sock.connect(('', 8080))
         self.sock.send("username " + username + "\n\r")
 
-    def send_mouse_cor(self, color, cord_list):
+    def send_mouse_cor(self, color, cord_list, width):
         coordinate_length = 15 # 000,000,000000 <- space
         message_max_length = 2048
         length_of_string = len(cord_list) * coordinate_length - 1
         while (length_of_string > message_max_length):
             place_in_list = int(message_max_length / coordinate_length) - 1
             string_to_send = " ".join(cord_list[:place_in_list])
-            self.sock.send("canvas_change {}\n\r".format(string_to_send))
+            self.sock.send("canvas_change {} {} {}\n\r".format(color, str(width), string_to_send))
             send_cord_list = cord_list[place_in_list:]
             length_of_string = len(cord_list) * coordinate_length - 1
 
         string_to_send = " ".join(cord_list)
-        self.sock.send("canvas_change {} {}\n\r".format(color, string_to_send))
+        self.sock.send("canvas_change {} {} {}\n\r".format(color, str(width), string_to_send))
     
     def send_chat_message(self, msg):
     	new_msg = msg.replace(" ","_")
