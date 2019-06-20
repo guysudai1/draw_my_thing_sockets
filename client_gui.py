@@ -23,13 +23,13 @@ class Application(object):
         self.board_text.insert(END,"LEADER BOARD:\n\n")
         self.board_text.config(state=DISABLED)
         
-        self.button_blindt = Button(canvas,bg="black",fg="white",text="Blind team",width = 15, command = partial(client.self.send_ability,"Blindteam"))
+        self.button_blindt = Button(canvas,bg="black",fg="white",text="Blind team",width = 15, command = partial(client.send_ability,"Blindteam",""))
         self.button_blindt.place(x=200,y=550)
         
-        self.button_blindp = Button(canvas,bg="black",fg="white",text="Blind person",width = 15, command = partial(client.self.send_ability,"Blindperson"))
+        self.button_blindp = Button(canvas,bg="black",fg="white",text = "Blind person",width = 15, command = self.p_name_window)
         self.button_blindp.place(x=330,y=550)
         
-        self.button_getl = Button(canvas,bg="black",fg="white",text="Get letter",width = 15, command = partial(client.self.send_ability,"Getletter"))
+        self.button_getl = Button(canvas,bg="black",fg="white",text="Get letter",width = 15, command = partial(client.send_ability,"Getletter",""))
         self.button_getl.place(x=460,y=550)
         
         j=0
@@ -85,6 +85,17 @@ class Application(object):
                 self.board_text.insert(END,split_newmsg[0] + ": " +  split_newmsg[1] + "\n")
             self.board_text.config(state=DISABLED)
         
+    def p_name_window(self): # new window definition
+        self.newwin = Toplevel(self.master)
+        self.p_name = Entry(self.newwin)
+        self.newwin.bind('<Return>',self.send_blind_person)
+        self.p_name.pack()
+          
+    def send_blind_person(self,event):
+        msg = self.p_name.get()
+        client.self.send_ability("Blindperson",msg)
+        self.newwin.destroy()    
+
     def destroy_master(self):
         self.master.destroy()
            
