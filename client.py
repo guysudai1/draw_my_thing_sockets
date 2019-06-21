@@ -8,7 +8,7 @@ class Classy(object):
     def __init__(self, username):
         self.got_image = False
         self.sock = socket.socket()
-        self.sock.connect(('', 8065))
+        self.sock.connect(('10.67.101.122', 8065))
         self.sock.send("username " + username + "\n\r")
 
     def send_mouse_cor(self, color, cord_list, width):
