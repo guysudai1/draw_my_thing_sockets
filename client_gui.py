@@ -55,8 +55,7 @@ class Application(object):
         self.blindperson_button = Button(self.ability_canvas,bg="black",fg="white",text = "Blind\nPerson\n3",width=3, height=3, command=self.player_name_window)
         self.blindperson_button.place(x=65,y=20)
 
-        self.getletter_button = Button(self.ability_canvas, bg="black", fg="white", text="Get\nLetter\n1", width=3, height=3,  command = partial(self.cls.send_ability,"getletter",""))
-        self.getletter_button.place(x=120,y=20)
+        
 
         self.word_canvas = Canvas(self.canvas, bg="white", height=50, width=400)
         self.word_canvas.place(x=159, y=450+100)
@@ -72,9 +71,7 @@ class Application(object):
         self.image_canvas.place(x=160, y=50)
         self.lastx = self.lasty = None
         self.image_canvas.bind('<1>', self.paint_image)
-        
-        self.change_width_button = Button(self.canvas, bg="black", fg="white", text="Choose Width", height=3, width=15, command=self.select_width)
-        self.change_width_button.place(x=3,y=600-66-66)
+     
         self.get_color_button = Button(self.canvas, bg="black", fg="white", text="Choose Color", height=3, width=15, command=self.select_color)
         self.get_color_button.place(x=3,y=600-66)
     
