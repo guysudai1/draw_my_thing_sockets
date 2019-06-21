@@ -49,6 +49,15 @@ class Application(object):
         self.ability_canvas = Canvas(self.canvas, bg="white", height=100, width=400)
         self.ability_canvas.place(x=160, y=450)
         
+        self.blindteam_button = Button(self.ability_canvas,bg="black",fg="white",text="Blind\nTeam\n5",width = 3, height=3, command = partial(self.cls.send_ability,"blindteam",""))
+        self.blindteam_button.place(x=10,y=20)
+
+        self.blindperson_button = Button(self.ability_canvas,bg="black",fg="white",text = "Blind\nPerson\n3",width=3, height=3, command=self.player_name_window)
+        self.blindperson_button.place(x=65,y=20)
+
+        self.getletter_button = Button(self.ability_canvas, bg="black", fg="white", text="Get\nLetter\n1", width=3, height=3,  command = partial(self.cls.send_ability,"getletter",""))
+        self.getletter_button.place(x=120,y=20)
+
         self.word_canvas = Canvas(self.canvas, bg="white", height=50, width=400)
         self.word_canvas.place(x=159, y=450+100)
         self.word = Text(self.word_canvas, height=50, width= 400, bg="white", fg="black", font=('Arial', 20))
@@ -61,12 +70,12 @@ class Application(object):
 
         self.image_canvas = Canvas(self.canvas, bg="white", height=400, width=400)
         self.image_canvas.place(x=160, y=50)
-        self.image        = Image.new("RGB", (400,400), 'white')
-        self.draw    = ImageDraw.Draw(self.image)
         self.lastx = self.lasty = None
         self.image_canvas.bind('<1>', self.paint_image)
-    
-        self.get_color_button = Button(self.canvas, bg="black", fg="white", text="Choose color", height=3, width=15, command=self.select_color)
+        
+        self.change_width_button = Button(self.canvas, bg="black", fg="white", text="Choose Width", height=3, width=15, command=self.select_width)
+        self.change_width_button.place(x=3,y=600-66-66)
+        self.get_color_button = Button(self.canvas, bg="black", fg="white", text="Choose Color", height=3, width=15, command=self.select_color)
         self.get_color_button.place(x=3,y=600-66)
     
         t = Thread(target=self.get_messages)
@@ -128,12 +137,8 @@ class Application(object):
                 self.word.insert(END, "WORD: " + word)
                 self.word.config(state=DISABLED)
             elif (message == "resetboard"):
-                self.img = Image.new("RGB", (400,400), "white")
-                self.img.save("canvas.png")
-                self.img = Image.open("canvas.png")
-                self.img = ImageTk.PhotoImage(self.img)
-                image_sprite = self.image_canvas.create_image(200,200, image=self.img)
-                self.master.update_idletasks()
+                self.image_canvas.delete("all") 
+        
 
 
     def update_image(self, color, width, cord_array):
@@ -144,13 +149,7 @@ class Application(object):
             return
         for i, cord in enumerate(cord_array[:-1]):
             next_cord = cord_array[i+1]
-            self.draw.line((cord, next_cord), fill="#{}".format(color), width=width)
-        self.image.save("canvas.png", "PNG")
-        #time.sleep(0.1)
-        self.img = Image.open("canvas.png")
-        self.img = ImageTk.PhotoImage(self.img)
-        image_sprite = self.image_canvas.create_image(200,200, image=self.img)
-        self.master.update_idletasks()
+            self.image_canvas.create_line(cord[0], cord[1], next_cord[0], next_cord[1], fill="#{}".format(color), width=width)
         """ 
         self.color_canvas = Canvas(canvas, bg="white", height=128, width=128)
         self.color_canvas.place(y=600-128, x=0)
@@ -180,6 +179,20 @@ class Application(object):
         self.color = (self.color[0], self.color[1], event.y)
         self.load_colorpicker()
     """
+    def player_name_window(self): # new window definition
+        self.new_win = Toplevel(self.master)
+        self.p_name = Entry(self.new_win)
+        self.new_win.bind('<Return>',self.send_blind_person)
+        self.p_name.pack()
+          
+    def send_blind_person(self, event):
+        msg = self.p_name.get()
+        self.cls.send_ability("blindperson", msg)
+        self.new_win.destroy() 
+    
+    def select_width(self):
+        print("hey")
+
     def paint_image(self, event):
         self.lastx, self.lasty = event.x, event.y
         self.image_canvas.bind('<B1-Motion>', self.do_painting)
@@ -224,7 +237,7 @@ class Application(object):
         self.main_frame = Frame(self.master, bg="white")
         self.tool_box = ["pen", "eraser"]
         self.drawn_pixels = []
-        self.time_refresh = 0.15
+        self.time_refresh = 0.1
         self.eraser = False
         self.color = "#000000" # BLACK
         self.timer = Timer(self.time_refresh, self.get_drawn_pixels, [self.drawn_pixels])

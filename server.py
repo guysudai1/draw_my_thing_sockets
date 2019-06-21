@@ -83,10 +83,10 @@ class Player(object):
         return "{}: [\nscore: {}\nip: {},\nstate: {},\nabilities: [\n\t\t{}\n]\n]".format(self.name, self.score, self.ip, self.state, self.abilities)
     def __create_abilities__(self, player_count):
             
-        self.abilities.append(Ability(2 * player_count, "blindteam", 10, 4)) # Cost, name, cooldown, effect time
-        self.abilities.append(Ability(5, "unblind", 20, 0)) # Cost, name, cooldown
+        self.abilities.append(Ability(5, "blindteam", 10, 4)) # Cost, name, cooldown, effect time
+        #self.abilities.append(Ability(5, "unblind", 20, 0)) # Cost, name, cooldown
         self.abilities.append(Ability(2, "blindperson", 3, 4))
-
+        self.abilities.append(Ability(1, "getletter", 3, 0))
 
     def __get_ability__(self, ability_name):
         # Get ability in player's inventory
@@ -492,16 +492,25 @@ class Game(object):
                     if (cur_player != player and cur_player != self.drawer):
                         # Set player state and remove 
 
-                        if (not cur_player.has_state("blind")): continue
+                        if (cur_player.has_state("blind")): continue
                         cur_player.add_state("blind")
                         cur_player.time_unblind = time.time() + casted_ability.time_last
+                       
                         remove_state_timer = Timer(casted_ability.time_last, cur_player.remove_state, ["blind"])
                         remove_state_timer.start()
 
             elif (ability_name == "blindperson"):
-                # Make prompt pop up and get player's name
-                pass
+                # Add ability to player
+                for cur_player in self.players:
+                    if (cur_player.name == info):
+                        if (cur_player.has_state("blind")): break
+                        cur_player.add_state("blind")
+                        cur_player.time_unblind = time.time() + casted_ability.time_last
+                        remove_state_timer = Timer(casted_ability.time_last, cur_player.remove_state, ["blind"])
+                        break
 
+            elif (ability_name == "getletter"):
+                pass
         def __cast__(self, ability_name, player, info=""):
             """
             This function checks if a player can cast an ability.
@@ -691,7 +700,7 @@ class Game(object):
             peek_data = sock.recv(allowed, socket.MSG_PEEK)
             if end not in peek_data:
                 self.__kick_player__(sock, "sending more than character limit or not having \\n\\r at the end of the line.")
-                print("KICKING")
+               
                 return None
 
             while (hit < len(end)):
@@ -704,6 +713,8 @@ class Game(object):
             return data
 
         def send_message(self, serv, command, message, replace_spaces=True):
+
+
             if (self.__get_player__(serv) is None): return
             if replace_spaces:
                 message = "_".join(message.split(' '))
@@ -919,7 +930,8 @@ class Game(object):
                 #self.img.show() 
 		for cur_player in self.players:
 		    if cur_player.has_state("blind"):
-		            Timer(cur_player.time_unblind - time.time(), self.send_message, [cur_player.conn, "canvas_change", "{} {} {}".format(color, str(width), " ".join(coordinate_array)), False])
+                        t = Timer(cur_player.time_unblind - time.time(), self.send_message, [cur_player.conn, "canvas_change", "{} {} {}".format(color, str(width), " ".join(coordinate_array)), False])
+                        t.start()
 		    else:
 		        self.send_message(cur_player.conn, "canvas_change", "{} {} {}".format(color, str(width), " ".join(coordinate_array)), False)
  
